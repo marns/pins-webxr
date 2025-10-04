@@ -89,26 +89,37 @@ class App {
         var engine = new Engine(canvas, true);
         var scene = new Scene(engine);
 
-        // Setup camera looking at the sphere from a good distance
-        var camera: ArcRotateCamera = new ArcRotateCamera("Camera", Math.PI / 2, Math.PI / 2, 2, Vector3.Zero(), scene);
+        // Setup camera looking down at the pin grid from above
+        var camera: ArcRotateCamera = new ArcRotateCamera("Camera", 0, 0, 8, Vector3.Zero(), scene);
         camera.attachControl(canvas, true);
         // Set camera limits to ensure it stays in a good position
-        camera.lowerRadiusLimit = 1.5;
-        camera.upperRadiusLimit = 5;
+        camera.lowerRadiusLimit = 2;
+        camera.upperRadiusLimit = 8;
         
         // Add better lighting
         var light1: HemisphericLight = new HemisphericLight("light1", new Vector3(1, 1, 0), scene);
         light1.intensity = 0.7;
         
         // Create a sphere at the origin (where Looking Glass will focus)
-        var sphere: Mesh = MeshBuilder.CreateSphere("sphere", { diameter: 1 }, scene);
-        sphere.position = Vector3.Zero();
+        //var sphere: Mesh = MeshBuilder.CreateSphere("sphere", { diameter: 1 }, scene);
+        const pin = MeshBuilder.CreateCylinder("cylinder", { height: 1, diameter: .1 }, scene);
+        pin.position = Vector3.Zero();
         
-        // Add a colorful material to make the sphere easier to see
-        var sphereMaterial = new StandardMaterial("sphereMat", scene);
-        sphereMaterial.diffuseColor = new Color3(1, 0.2, 0.2); // Red color
-        sphereMaterial.specularColor = new Color3(0.5, 0.5, 0.5);
-        sphere.material = sphereMaterial;
+        // Silver pin material
+        var sphereMaterial = new StandardMaterial("pinMat", scene);
+        sphereMaterial.diffuseColor = new Color3(.8,.8,.8);
+        sphereMaterial.specularColor = new Color3(1,1,1);
+        pin.material = sphereMaterial;
+
+        var pins = [];
+        for (let y = 0; y < 50; y++) {
+            for (let x = 0; x < 50; x++) {
+                var pinInstance = pin.createInstance(`pin_${x}_${y}`);
+                pinInstance.position.x = x * 0.1 - 2.5;
+                pinInstance.position.z = y * 0.1 - 2.5;
+                pins.push(pinInstance);
+            }
+        }
         
         // Add a ground plane for reference
         var ground = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, scene);
@@ -118,26 +129,26 @@ class App {
         ground.material = groundMaterial;
         
         // Add some smaller spheres at different depths for 3D effect
-        var smallSphere1 = MeshBuilder.CreateSphere("smallSphere1", { diameter: 0.3 }, scene);
-        smallSphere1.position = new Vector3(-0.8, 0.3, 0.5);
-        var mat1 = new StandardMaterial("mat1", scene);
-        mat1.diffuseColor = new Color3(0.3, 0.3, 1); // Blue
-        smallSphere1.material = mat1;
+        // var smallSphere1 = MeshBuilder.CreateSphere("smallSphere1", { diameter: 0.3 }, scene);
+        // smallSphere1.position = new Vector3(-0.8, 0.3, 0.5);
+        // var mat1 = new StandardMaterial("mat1", scene);
+        // mat1.diffuseColor = new Color3(0.3, 0.3, 1); // Blue
+        // smallSphere1.material = mat1;
         
-        var smallSphere2 = MeshBuilder.CreateSphere("smallSphere2", { diameter: 0.3 }, scene);
-        smallSphere2.position = new Vector3(0.8, -0.3, -0.5);
-        var mat2 = new StandardMaterial("mat2", scene);
-        mat2.diffuseColor = new Color3(1, 1, 0.3); // Yellow
-        smallSphere2.material = mat2;
+        // var smallSphere2 = MeshBuilder.CreateSphere("smallSphere2", { diameter: 0.3 }, scene);
+        // smallSphere2.position = new Vector3(0.8, -0.3, -0.5);
+        // var mat2 = new StandardMaterial("mat2", scene);
+        // mat2.diffuseColor = new Color3(1, 1, 0.3); // Yellow
+        // smallSphere2.material = mat2;
 
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
             // Rotate spheres for visual confirmation that rendering is working
-            sphere.rotation.y += 0.01;
-            sphere.rotation.x += 0.005;
-            smallSphere1.rotation.y -= 0.02;
-            smallSphere2.rotation.x += 0.015;
+            // sphere.rotation.y += 0.01;
+            // sphere.rotation.x += 0.005;
+            // smallSphere1.rotation.y -= 0.02;
+            // smallSphere2.rotation.x += 0.015;
             scene.render();
         });
 
