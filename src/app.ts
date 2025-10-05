@@ -1,6 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3 } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -13,12 +13,13 @@ class App {
         // Configure Looking Glass settings BEFORE creating the polyfill
         // Use object assignment to ensure proper initialization
         Object.assign(LookingGlassConfig, {
-            targetY: 0,        // Y position of the target point (center of scene)
-            targetZ: 0,        // Z position of the target point
-            targetDiam: 2.5,   // Diameter of the viewing volume (slightly larger than sphere)
-            fovy: (40 * Math.PI) / 180,  // Field of view - 40 degrees (was 14, too narrow!)
+            targetX: 0,        // X position of the target point (center of pin grid)
+            targetY: -0.5,     // Y position of the target point (middle of pin heights)
+            targetZ: 0,        // Z position of the target point (center of pin grid)
+            targetDiam: 6,     // Diameter of the viewing volume (encompasses 5x5 grid)
+            fovy: (40 * Math.PI) / 180,  // Field of view - 40 degrees
             trackballX: 0,
-            trackballY: 0,
+            trackballY: Math.PI / 2,  // Rotate to look down from above
             trackballZ: 0
         });
         
@@ -27,9 +28,11 @@ class App {
         
         // Log the Looking Glass configuration
         console.log("Looking Glass Config:", {
+            targetX: LookingGlassConfig.targetX,
             targetY: LookingGlassConfig.targetY,
             targetZ: LookingGlassConfig.targetZ,
             targetDiam: LookingGlassConfig.targetDiam,
+            trackballY: (LookingGlassConfig.trackballY * 180 / Math.PI).toFixed(1) + " degrees",
             fovy: (LookingGlassConfig.fovy * 180 / Math.PI).toFixed(1) + " degrees"
         });
 
@@ -111,7 +114,7 @@ class App {
         sphereMaterial.specularColor = new Color3(1,1,1);
         pin.material = sphereMaterial;
 
-        var pins = [];
+        var pins: InstancedMesh[] = [];
         for (let y = 0; y < 50; y++) {
             for (let x = 0; x < 50; x++) {
                 var pinInstance = pin.createInstance(`pin_${x}_${y}`);
@@ -120,6 +123,19 @@ class App {
                 pins.push(pinInstance);
             }
         }
+        
+        // Track mouse position in 3D space
+        var mousePosition = new Vector3(0, 0, 0);
+        var pickGround = MeshBuilder.CreateGround("pickGround", { width: 10, height: 10 }, scene);
+        pickGround.position.y = -0.75;
+        pickGround.isVisible = false; // Invisible ground for mouse picking
+        
+        scene.onPointerMove = () => {
+            const pickResult = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh === pickGround);
+            if (pickResult && pickResult.hit && pickResult.pickedPoint) {
+                mousePosition.copyFrom(pickResult.pickedPoint);
+            }
+        };
         
         // Add a ground plane for reference
         var ground = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, scene);
@@ -144,11 +160,33 @@ class App {
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
-            // Rotate spheres for visual confirmation that rendering is working
-            // sphere.rotation.y += 0.01;
-            // sphere.rotation.x += 0.005;
-            // smallSphere1.rotation.y -= 0.02;
-            // smallSphere2.rotation.x += 0.015;
+            // Update pin heights with reduced noise + crater effect
+            pins.forEach(pinInstance => {
+                // Reduced background noise (0 to 0.1 instead of 0 to 1)
+                const randomNoise = 0;// Math.random() * 0.05;
+                
+                // Calculate distance from pin to mouse position (in XZ plane)
+                const dx = pinInstance.position.x - mousePosition.x;
+                const dz = pinInstance.position.z - mousePosition.z;
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                
+                // Crater effect: pins closer to mouse are pushed down
+                // Using a falloff function: influence decreases with distance
+                const craterRadius = 0.8; // Radius of effect
+                const craterDepth = 0.6;  // Max depth of crater
+                let craterEffect = 0;
+                
+                if (distance < craterRadius) {
+                    // Smooth falloff using cosine curve
+                    const normalizedDist = distance / craterRadius;
+                    craterEffect = (Math.cos(normalizedDist * Math.PI) + 1) * 0.5 * craterDepth;
+                }
+                
+                // Combine effects: base height + noise - crater
+                const baseHeight = 0.25; // Base height for pins
+                pinInstance.position.y = -0.75 + baseHeight + randomNoise - craterEffect;
+            });
+            
             scene.render();
         });
 
