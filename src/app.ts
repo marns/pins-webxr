@@ -1,6 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh, PBRMaterial, DirectionalLight } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -16,7 +16,7 @@ class App {
             targetX: 0,        // X position of the target point (center of pin grid)
             targetY: -0.5,     // Y position of the target point (middle of pin heights)
             targetZ: 0,        // Z position of the target point (center of pin grid)
-            targetDiam: 6,     // Diameter of the viewing volume (encompasses 5x5 grid)
+            targetDiam: 8,    // Diameter of the viewing volume (encompasses 10x5.6 grid)
             fovy: (40 * Math.PI) / 180,  // Field of view - 40 degrees
             trackballX: 0,
             trackballY: Math.PI / 2,  // Rotate to look down from above
@@ -93,41 +93,54 @@ class App {
         var scene = new Scene(engine);
 
         // Setup camera looking down at the pin grid from above
-        var camera: ArcRotateCamera = new ArcRotateCamera("Camera", 0, 0, 8, Vector3.Zero(), scene);
+        var camera: ArcRotateCamera = new ArcRotateCamera("Camera", 0, 0, 5, Vector3.Zero(), scene);
         camera.attachControl(canvas, true);
         // Set camera limits to ensure it stays in a good position
-        camera.lowerRadiusLimit = 2;
-        camera.upperRadiusLimit = 8;
+        camera.lowerRadiusLimit = 4;
+        camera.upperRadiusLimit = 15;
         
         // Add better lighting
-        var light1: HemisphericLight = new HemisphericLight("light1", new Vector3(1, 1, 0), scene);
-        light1.intensity = 0.7;
+        // var light1: HemisphericLight = new HemisphericLight("light1", new Vector3(0, -1, 0), scene);
+        // light1.intensity = 0.7;
+
+        var light2: DirectionalLight = new DirectionalLight("light2", new Vector3(0.5, -.5, 0.5), scene);
+        light2.intensity = 0.7;
+        light2.shadowEnabled = false;
         
         // Create a sphere at the origin (where Looking Glass will focus)
         //var sphere: Mesh = MeshBuilder.CreateSphere("sphere", { diameter: 1 }, scene);
-        const pin = MeshBuilder.CreateCylinder("cylinder", { height: 1, diameter: .1 }, scene);
+        const pin = MeshBuilder.CreateCylinder("cylinder", { height: 1, diameter: .1 });
         pin.position = Vector3.Zero();
         
         // Silver pin material
-        var sphereMaterial = new StandardMaterial("pinMat", scene);
-        sphereMaterial.diffuseColor = new Color3(.8,.8,.8);
-        sphereMaterial.specularColor = new Color3(1,1,1);
+        var sphereMaterial = new PBRMaterial("pinMat", scene);
+        sphereMaterial.roughness = .5;
+        sphereMaterial.metallic = 1;
+        sphereMaterial.albedoColor = new Color3(.8,.8,.8);
+        sphereMaterial.metallicReflectanceColor = new Color3(1,1,1);
         pin.material = sphereMaterial;
 
         var pins: InstancedMesh[] = [];
-        for (let y = 0; y < 50; y++) {
-            for (let x = 0; x < 50; x++) {
-                var pinInstance = pin.createInstance(`pin_${x}_${y}`);
-                pinInstance.position.x = x * 0.1 - 2.5;
-                pinInstance.position.z = y * 0.1 - 2.5;
+        const gridWidth = 36;
+        const gridDepth = Math.round(gridWidth * 1.7777777777777777);  // Maintains 16:9 ratio
+        const pinSpacing = 0.1;
+        const totalWidth = gridWidth * pinSpacing;
+        const totalDepth = gridDepth * pinSpacing;
+        
+        for (let z = 0; z < gridDepth; z++) {
+            for (let x = 0; x < gridWidth; x++) {
+                var pinInstance = pin.createInstance(`pin_${x}_${z}`);
+                pinInstance.position.x = x * pinSpacing - totalWidth / 2;
+                pinInstance.position.z = z * pinSpacing - totalDepth / 2;
                 pins.push(pinInstance);
             }
         }
+        pin.setEnabled(false);
         
         // Track mouse position in 3D space
         var mousePosition = new Vector3(0, 0, 0);
-        var pickGround = MeshBuilder.CreateGround("pickGround", { width: 10, height: 10 }, scene);
-        pickGround.position.y = -0.75;
+        var pickGround = MeshBuilder.CreateGround("pickGround", { width: totalWidth + 2, height: totalDepth + 2 }, scene);
+        pickGround.position.y = 0;//-0.75;
         pickGround.isVisible = false; // Invisible ground for mouse picking
         
         scene.onPointerMove = () => {
@@ -138,25 +151,11 @@ class App {
         };
         
         // Add a ground plane for reference
-        var ground = MeshBuilder.CreateGround("ground", { width: 4, height: 4 }, scene);
-        ground.position.y = -0.75;
+        var ground = MeshBuilder.CreateGround("ground", { width: totalWidth, height: totalDepth }, scene);
         var groundMaterial = new StandardMaterial("groundMat", scene);
         groundMaterial.diffuseColor = new Color3(0.2, 0.5, 0.3); // Green color
         ground.material = groundMaterial;
         
-        // Add some smaller spheres at different depths for 3D effect
-        // var smallSphere1 = MeshBuilder.CreateSphere("smallSphere1", { diameter: 0.3 }, scene);
-        // smallSphere1.position = new Vector3(-0.8, 0.3, 0.5);
-        // var mat1 = new StandardMaterial("mat1", scene);
-        // mat1.diffuseColor = new Color3(0.3, 0.3, 1); // Blue
-        // smallSphere1.material = mat1;
-        
-        // var smallSphere2 = MeshBuilder.CreateSphere("smallSphere2", { diameter: 0.3 }, scene);
-        // smallSphere2.position = new Vector3(0.8, -0.3, -0.5);
-        // var mat2 = new StandardMaterial("mat2", scene);
-        // mat2.diffuseColor = new Color3(1, 1, 0.3); // Yellow
-        // smallSphere2.material = mat2;
-
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
@@ -173,7 +172,7 @@ class App {
                 // Crater effect: pins closer to mouse are pushed down
                 // Using a falloff function: influence decreases with distance
                 const craterRadius = 0.8; // Radius of effect
-                const craterDepth = 0.6;  // Max depth of crater
+                const craterDepth = 0.5;  // Max depth of crater
                 let craterEffect = 0;
                 
                 if (distance < craterRadius) {
@@ -183,8 +182,8 @@ class App {
                 }
                 
                 // Combine effects: base height + noise - crater
-                const baseHeight = 0.25; // Base height for pins
-                pinInstance.position.y = -0.75 + baseHeight + randomNoise - craterEffect;
+                const baseHeight = 0; // Base height for pins
+                pinInstance.position.y = baseHeight + randomNoise - craterEffect;
             });
             
             scene.render();
