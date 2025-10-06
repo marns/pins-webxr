@@ -5,6 +5,7 @@ import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
   } from "@lookingglass/webxr";
+import { Viewer } from "./viewer";
   
 
 class App {
@@ -80,6 +81,50 @@ class App {
     }
 
     constructor() {
+        // Define grid dimensions (used for both pin grid and video downsampling)
+        // Swapped to create landscape orientation when viewed from above
+        // gridWidth (X axis) = 36, gridDepth (Z axis) = 64 for proper landscape display
+        const gridWidth = 36;
+        const gridDepth = Math.round(gridWidth * 1.7777777777777777);  // 64 pixels, maintains 16:9 ratio
+
+        // Create video element for WebRTC stream
+        const videoElement = document.createElement("video");
+        videoElement.autoplay = true;
+        videoElement.playsInline = true;
+        videoElement.muted = true;
+        videoElement.style.display = "none"; // Hidden, only used for processing
+        document.body.appendChild(videoElement);
+
+        // Create canvas for downsampling video to pin grid resolution
+        // Canvas dimensions swapped to rotate the video 90 degrees
+        const videoCanvas = document.createElement("canvas");
+        videoCanvas.width = gridDepth;   // 36 (will map to Z axis)
+        videoCanvas.height = gridWidth;  // 64 (will map to X axis)
+        const videoCtx = videoCanvas.getContext("2d", { willReadFrequently: true });
+        
+        // Initialize WebRTC viewer
+        const viewer = new Viewer();
+        viewer.initialize((error) => {
+            console.error("Viewer error:", error);
+        });
+
+        // Hardcoded broadcaster ID (you can change this)
+        const BROADCASTER_ID = "8c0bda9f-a950-4773-a113-fc8d4171f49e";
+        
+        // Connect to broadcaster after a short delay to allow peer initialization
+        setTimeout(() => {
+            viewer.connectToBroadcaster(
+                BROADCASTER_ID,
+                videoElement,
+                () => {
+                    console.log("Connected to broadcaster, receiving video stream");
+                    videoElement.play();
+                },
+                (error) => {
+                    console.error("Connection error:", error);
+                }
+            );
+        }, 1000);
 
         // create the canvas html element and attach it to the webpage
         var canvas = document.createElement("canvas");
@@ -121,8 +166,6 @@ class App {
         pin.material = sphereMaterial;
 
         var pins: InstancedMesh[] = [];
-        const gridWidth = 36;
-        const gridDepth = Math.round(gridWidth * 1.7777777777777777);  // Maintains 16:9 ratio
         const pinSpacing = 0.1;
         const totalWidth = gridWidth * pinSpacing;
         const totalDepth = gridDepth * pinSpacing;
@@ -137,19 +180,6 @@ class App {
         }
         pin.setEnabled(false);
         
-        // Track mouse position in 3D space
-        var mousePosition = new Vector3(0, 0, 0);
-        var pickGround = MeshBuilder.CreateGround("pickGround", { width: totalWidth + 2, height: totalDepth + 2 }, scene);
-        pickGround.position.y = 0;//-0.75;
-        pickGround.isVisible = false; // Invisible ground for mouse picking
-        
-        scene.onPointerMove = () => {
-            const pickResult = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh === pickGround);
-            if (pickResult && pickResult.hit && pickResult.pickedPoint) {
-                mousePosition.copyFrom(pickResult.pickedPoint);
-            }
-        };
-        
         // Add a ground plane for reference
         var ground = MeshBuilder.CreateGround("ground", { width: totalWidth, height: totalDepth }, scene);
         var groundMaterial = new StandardMaterial("groundMat", scene);
@@ -159,32 +189,41 @@ class App {
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
-            // Update pin heights with reduced noise + crater effect
-            pins.forEach(pinInstance => {
-                // Reduced background noise (0 to 0.1 instead of 0 to 1)
-                const randomNoise = 0;// Math.random() * 0.05;
+            // Process video frame and update pin heights
+            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && videoCtx) {
+                // Draw video frame to canvas (downsampled to rotated resolution)
+                // Canvas is 36w x 64h, which rotates the landscape video
+                videoCtx.drawImage(videoElement, 0, 0, gridDepth, gridWidth);
                 
-                // Calculate distance from pin to mouse position (in XZ plane)
-                const dx = pinInstance.position.x - mousePosition.x;
-                const dz = pinInstance.position.z - mousePosition.z;
-                const distance = Math.sqrt(dx * dx + dz * dz);
+                // Get pixel data
+                const imageData = videoCtx.getImageData(0, 0, gridDepth, gridWidth);
+                const pixels = imageData.data;
                 
-                // Crater effect: pins closer to mouse are pushed down
-                // Using a falloff function: influence decreases with distance
-                const craterRadius = 0.8; // Radius of effect
-                const craterDepth = 0.5;  // Max depth of crater
-                let craterEffect = 0;
-                
-                if (distance < craterRadius) {
-                    // Smooth falloff using cosine curve
-                    const normalizedDist = distance / craterRadius;
-                    craterEffect = (Math.cos(normalizedDist * Math.PI) + 1) * 0.5 * craterDepth;
-                }
-                
-                // Combine effects: base height + noise - crater
-                const baseHeight = 0; // Base height for pins
-                pinInstance.position.y = baseHeight + randomNoise - craterEffect;
-            });
+                // Update each pin height based on corresponding pixel intensity
+                pins.forEach((pinInstance, index) => {
+                    // Calculate grid position in 3D space
+                    const x = index % gridWidth;  // 0-63 (X axis, left-right)
+                    const z = Math.floor(index / gridWidth);  // 0-35 (Z axis, front-back)
+                    
+                    // Swap X and Z to rotate 90 degrees: video X -> pin Z, video Y -> pin X
+                    const videoX = z;  // Use pin's Z as video's X (0-35)
+                    const videoY = x;  // Use pin's X as video's Y (0-63)
+                    const pixelIndex = (videoY * gridDepth + videoX) * 4;
+                    
+                    // Calculate grayscale intensity (0-255)
+                    const r = pixels[pixelIndex];
+                    const g = pixels[pixelIndex + 1];
+                    const b = pixels[pixelIndex + 2];
+                    const intensity = (r + g + b) / 3;
+                    
+                    // Map intensity (0-255) to pin height (0-1)
+                    // Darker pixels = lower pins, brighter pixels = higher pins
+                    const normalizedIntensity = intensity / 255;
+                    
+                    // Set pin Y position
+                    pinInstance.position.y = normalizedIntensity - 0.5;
+                });
+            }
             
             scene.render();
         });
