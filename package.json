@@ -15,6 +15,7 @@
     "vite": "^7.1.7"
   },
   "dependencies": {
-    "@lookingglass/webxr": "^0.6.0"
+    "@lookingglass/webxr": "^0.6.0",
+    "peerjs": "^1.5.5"
   }
 }
