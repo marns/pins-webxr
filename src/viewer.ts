@@ -1,131 +1,121 @@
-import Peer from 'peerjs';
-import type { MediaConnection } from 'peerjs';
+import { getOfferEndpoint, getRTCConfiguration } from './webrtcConfig';
 
 export class Viewer {
-  private peer: Peer | null = null;
-  private call: MediaConnection | null = null;
+  private pc: RTCPeerConnection | null = null;
+  private stream: MediaStream | null = null;
 
-  async initialize(onError: (error: string) => void) {
-    try {
-      // Create a new Peer instance
-      this.peer = new Peer({
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-          ]
-        }
-      });
-
-      this.peer.on('open', (id) => {
-        console.log('Viewer Peer ID:', id);
-      });
-
-      this.peer.on('error', (err) => {
-        console.error('Peer error:', err);
-        onError(`Peer error: ${err.message}`);
-      });
-    } catch (error) {
-      console.error('Failed to initialize viewer:', error);
-      onError('Failed to initialize viewer');
-    }
-  }
-
-  async connectToBroadcaster(
-    broadcasterId: string,
+  async connect(
     videoElement: HTMLVideoElement,
     onConnected: () => void,
-    onError: (error: string) => void
+    onError: (error: string) => void,
+    offerUrl?: string
   ): Promise<void> {
-    if (!this.peer) {
-      onError('Viewer not initialized');
-      return;
-    }
-
     try {
-      console.log('Connecting to broadcaster:', broadcasterId);
+      const url = offerUrl || getOfferEndpoint();
+      console.log('Connecting to signaling endpoint:', url);
 
-      // Create a dummy stream with both audio and video tracks
-      // This ensures proper WebRTC negotiation for receiving video
-      const dummyStream = new MediaStream();
-      
-      // Create a dummy video track (blank canvas)
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const canvasStream = canvas.captureStream();
-      const videoTrack = canvasStream.getVideoTracks()[0];
-      dummyStream.addTrack(videoTrack);
-      
-      // Create a dummy audio track (silent)
-      const audioContext = new AudioContext();
-      const destination = audioContext.createMediaStreamDestination();
-      const audioTrack = destination.stream.getAudioTracks()[0];
-      dummyStream.addTrack(audioTrack);
-      
-      console.log('Dummy stream tracks:', dummyStream.getTracks().length);
-      dummyStream.getTracks().forEach(track => {
-        console.log('Sending track:', track.kind);
-      });
+      // ICE servers optional via env; default is [] (host-only)
+      const pc = new RTCPeerConnection(getRTCConfiguration());
+      this.pc = pc;
 
-      // Call the broadcaster with the dummy stream
-      this.call = this.peer.call(broadcasterId, dummyStream);
+      // Receive-only transceiver to ensure a video m-line exists
+      const transceiver = pc.addTransceiver('video', { direction: 'recvonly' });
 
-      if (!this.call) {
-        onError('Failed to initiate call');
-        return;
+      // Prefer H.264 when available (helps Safari)
+      try {
+        if (
+          (transceiver as any).setCodecPreferences &&
+          (RTCRtpSender as any).getCapabilities
+        ) {
+          const caps = RTCRtpSender.getCapabilities('video');
+          if (caps && caps.codecs) {
+            const h264 = caps.codecs.filter((c) => c.mimeType === 'video/H264');
+            const rest = caps.codecs.filter((c) => c.mimeType !== 'video/H264');
+            if (h264.length) {
+              (transceiver as any).setCodecPreferences(h264.concat(rest));
+            }
+          }
+        }
+      } catch (_) {
+        // Non-fatal; continue with browser default codec order
       }
 
-      // Listen for the remote stream
-      this.call.on('stream', async (remoteStream) => {
-        console.log('Received remote stream with tracks:', remoteStream.getTracks().length);
-        remoteStream.getTracks().forEach(track => {
-          console.log('Track:', track.kind, 'enabled:', track.enabled);
-        });
-        videoElement.srcObject = remoteStream;
+      pc.ontrack = async (e) => {
+        console.log('Remote track received');
+        this.stream = e.streams[0];
+        videoElement.srcObject = this.stream;
         try {
           await videoElement.play();
-          console.log('Video playback started');
         } catch (err) {
           console.warn('Video play error (may be recoverable):', err);
         }
-        onConnected();
-      });
+      };
 
-      this.call.on('close', () => {
-        console.log('Call closed');
-        videoElement.srcObject = null;
-        dummyStream.getTracks().forEach(track => track.stop());
-        audioContext.close();
-        onError('Connection closed by broadcaster');
-      });
+      // Create offer and wait for ICE gathering to finish (non-trickle)
+      await pc.setLocalDescription(await pc.createOffer());
 
-      this.call.on('error', (err) => {
-        console.error('Call error:', err);
-        onError(`Connection error: ${err.message}`);
-        dummyStream.getTracks().forEach(track => track.stop());
-        audioContext.close();
+      const waitForIceComplete = new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve();
+          return;
+        }
+        const check = () => {
+          if (pc.iceGatheringState === 'complete') {
+            pc.removeEventListener('icegatheringstatechange', check);
+            resolve();
+          }
+        };
+        pc.addEventListener('icegatheringstatechange', check);
+        // Fallback timeout in case of edge cases
+        setTimeout(() => {
+          pc.removeEventListener('icegatheringstatechange', check);
+          resolve();
+        }, 1500);
       });
-      
-      console.log('Call initiated, waiting for stream...');
-    } catch (error) {
-      console.error('Failed to connect to broadcaster:', error);
-      onError('Failed to connect to broadcaster');
+      await waitForIceComplete;
+
+      const localDesc = pc.localDescription;
+      if (!localDesc) throw new Error('Local description missing');
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: localDesc.sdp, type: localDesc.type })
+      });
+      if (!res.ok) throw new Error(`Signaling failed: ${res.status}`);
+      const answer = await res.json();
+      await pc.setRemoteDescription(answer);
+
+      const handleState = () => {
+        console.log('PC state:', pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          onConnected();
+        } else if (
+          pc.connectionState === 'failed' ||
+          pc.connectionState === 'disconnected' ||
+          pc.connectionState === 'closed'
+        ) {
+          onError(`Peer connection ${pc.connectionState}`);
+        }
+      };
+      pc.onconnectionstatechange = handleState;
+      // Fire initial state in case we are already connected (rare)
+      handleState();
+    } catch (error: any) {
+      console.error('Failed to connect to server:', error);
+      onError(error?.message || 'Failed to connect');
     }
   }
 
   disconnect() {
-    if (this.call) {
-      this.call.close();
-      this.call = null;
+    if (this.pc) {
+      try { this.pc.close(); } catch {}
+      this.pc = null;
     }
-
-    if (this.peer) {
-      this.peer.destroy();
-      this.peer = null;
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
     }
-
     console.log('Viewer disconnected');
   }
 }
-

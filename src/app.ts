@@ -103,28 +103,21 @@ class App {
         videoCanvas.height = gridWidth;  // 64 (will map to X axis)
         const videoCtx = videoCanvas.getContext("2d", { willReadFrequently: true });
         
-        // Initialize WebRTC viewer
+        // Initialize WebRTC connection to minimal signaling server (POST /offer)
         const viewer = new Viewer();
-        viewer.initialize((error) => {
-            console.error("Viewer error:", error);
-        });
 
-        // Hardcoded broadcaster ID (you can change this)
-        const BROADCASTER_ID = "e9d1e011-3af0-4df9-8edd-a408db46ccf7";
-        
-        // Connect to broadcaster after a short delay to allow peer initialization
+        // Connect after short delay to ensure page is ready
         setTimeout(() => {
-            viewer.connectToBroadcaster(
-                BROADCASTER_ID,
+            viewer.connect(
                 videoElement,
                 () => {
-                    console.log("Connected to broadcaster, receiving video stream");
+                    console.log("Connected to WebRTC server, receiving video stream");
                 },
                 (error) => {
                     console.error("Connection error:", error);
                 }
             );
-        }, 1000);
+        }, 500);
 
         // create the canvas html element and attach it to the webpage
         var canvas = document.createElement("canvas");
