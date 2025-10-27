@@ -1,6 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh, PBRMaterial, DirectionalLight } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, Texture } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -17,8 +17,9 @@ class App {
             targetX: 0,        // X position of the target point (center of pin grid)
             targetY: -0.5,     // Y position of the target point (middle of pin heights)
             targetZ: 0,        // Z position of the target point (center of pin grid)
-            targetDiam: 8,    // Diameter of the viewing volume (encompasses 10x5.6 grid)
+            targetDiam: 4,    // Diameter of the viewing volume (encompasses 10x5.6 grid)
             fovy: (40 * Math.PI) / 180,  // Field of view - 40 degrees
+            depthiness: 0.6,
             trackballX: 0,
             trackballY: Math.PI / 2,  // Rotate to look down from above
             trackballZ: 0
@@ -109,7 +110,7 @@ class App {
         });
 
         // Hardcoded broadcaster ID (you can change this)
-        const BROADCASTER_ID = "8c0bda9f-a950-4773-a113-fc8d4171f49e";
+        const BROADCASTER_ID = "e9d1e011-3af0-4df9-8edd-a408db46ccf7";
         
         // Connect to broadcaster after a short delay to allow peer initialization
         setTimeout(() => {
@@ -118,7 +119,6 @@ class App {
                 videoElement,
                 () => {
                     console.log("Connected to broadcaster, receiving video stream");
-                    videoElement.play();
                 },
                 (error) => {
                     console.error("Connection error:", error);
@@ -144,25 +144,115 @@ class App {
         camera.lowerRadiusLimit = 4;
         camera.upperRadiusLimit = 15;
         
-        // Add better lighting
-        // var light1: HemisphericLight = new HemisphericLight("light1", new Vector3(0, -1, 0), scene);
-        // light1.intensity = 0.7;
-
-        var light2: DirectionalLight = new DirectionalLight("light2", new Vector3(0.5, -.5, 0.5), scene);
-        light2.intensity = 0.7;
-        light2.shadowEnabled = false;
+        // Create bright skybox environment for reflections on metallic pins
+        const skybox = MeshBuilder.CreateBox("skyBox", { size: 1000.0 }, scene);
+        const skyboxMaterial = new StandardMaterial("skyBox", scene);
+        skyboxMaterial.backFaceCulling = false;
+        skyboxMaterial.disableLighting = true;
+        
+        // Create a bright gradient from light blue/white at top to light gray at bottom
+        skyboxMaterial.emissiveColor = new Color3(0.9, 0.9, 0.95);
+        skybox.material = skyboxMaterial;
+        skybox.infiniteDistance = true;
+        
+        // Create environment texture for reflections
+        const hdrTexture = CubeTexture.CreateFromPrefilteredData("environmentSpecular.env", scene);
+        scene.environmentTexture = hdrTexture;
+        scene.environmentIntensity = .5;
+        
+        scene.clearColor = new Color3(0.8, 0.8, 0.85).toColor4();
+        
+        // Moderate ambient lighting
+        // const ambientLight = new HemisphericLight("ambientLight", new Vector3(0, 1, 0), scene);
+        // ambientLight.intensity = 0;
+        // ambientLight.diffuse = new Color3(1, 1, 1);
+        // ambientLight.specular = new Color3(0.8, 0.8, 0.8);
+        // ambientLight.groundColor = new Color3(0.7, 0.7, 0.75);
+        
+        // Main directional light from slight angle for better cylinder definition
+        const mainLight = new DirectionalLight("mainLight", new Vector3(0.2, -1, 0.15), scene);
+        mainLight.intensity = 0.0;
+        mainLight.diffuse = new Color3(1, 1, 1);
+        mainLight.specular = new Color3(1.2, 1.2, 1.2);
+        
+        // Key light from front-left - creates main highlights
+        const keyLight = new PointLight("keyLight", new Vector3(-3, 3, 3), scene);
+        keyLight.intensity = 0;
+        keyLight.diffuse = new Color3(1, 1, 1);
+        keyLight.specular = new Color3(1.5, 1.5, 1.5);
+        
+        // Fill light from front-right for balance
+        const fillLight = new PointLight("fillLight", new Vector3(3, 3, 3), scene);
+        fillLight.intensity = 0;
+        fillLight.diffuse = new Color3(1, 1, 1);
+        fillLight.specular = new Color3(1.5, 1.5, 1.5);
+        
+        // Back light from behind for rim lighting
+        const backLight = new PointLight("backLight", new Vector3(0, 2, -5), scene);
+        backLight.intensity = 0;
+        backLight.diffuse = new Color3(1, 1, 1);
+        backLight.specular = new Color3(1.5, 1.5, 1.5);
+        
+        // Side lights at cylinder mid-height to create highlights on curved surfaces
+        const leftLight = new PointLight("leftLight", new Vector3(-5, 1, 0), scene);
+        leftLight.intensity = 0;
+        leftLight.diffuse = new Color3(1, 1, 1);
+        leftLight.specular = new Color3(1.8, 1.8, 1.8);
+        
+        const rightLight = new PointLight("rightLight", new Vector3(5, 1, 0), scene);
+        rightLight.intensity = 0;
+        rightLight.diffuse = new Color3(1, 1, 1);
+        rightLight.specular = new Color3(1.8, 1.8, 1.8);
+        
+        // Low grazing lights to create vertical highlight streaks on cylinder sides
+        const grazingLight1 = new PointLight("grazingLight1", new Vector3(0, 0, 6), scene);
+        grazingLight1.intensity = 0;
+        grazingLight1.diffuse = new Color3(0.9, 0.9, 0.9);
+        grazingLight1.specular = new Color3(2.0, 2.0, 2.0);
+        
+        const grazingLight2 = new PointLight("grazingLight2", new Vector3(0, 0, -6), scene);
+        grazingLight2.intensity = 0;
+        grazingLight2.diffuse = new Color3(0.9, 0.9, 0.9);
+        grazingLight2.specular = new Color3(2.0, 2.0, 2.0);
         
         // Create a sphere at the origin (where Looking Glass will focus)
         //var sphere: Mesh = MeshBuilder.CreateSphere("sphere", { diameter: 1 }, scene);
         const pin = MeshBuilder.CreateCylinder("cylinder", { height: 1, diameter: .1 });
         pin.position = Vector3.Zero();
         
-        // Silver pin material
+        // Shiny chrome/silver pin material - like real pin art toys
         var sphereMaterial = new PBRMaterial("pinMat", scene);
-        sphereMaterial.roughness = .5;
-        sphereMaterial.metallic = 1;
-        sphereMaterial.albedoColor = new Color3(.8,.8,.8);
-        sphereMaterial.metallicReflectanceColor = new Color3(1,1,1);
+        
+        // Low roughness for shiny metal with visible highlights
+        sphereMaterial.roughness = 0.2;
+        
+        // Full metallic for true metal appearance
+        sphereMaterial.metallic = 1.0;
+        
+        // Bright silver/chrome base color
+        sphereMaterial.albedoColor = new Color3(0.9, 0.9, 0.92);
+        
+        // High reflectance for chrome-like appearance
+        sphereMaterial.metallicReflectanceColor = new Color3(1.0, 1.0, 1.0);
+        sphereMaterial.metallicF0Factor = 0.85;
+        
+        // Enhanced environment reflections - key for bright sides!
+        sphereMaterial.environmentIntensity = 2.0;
+        sphereMaterial.reflectionTexture = scene.environmentTexture;
+        
+        // Moderate lighting response to show form
+        //sphereMaterial.directIntensity = 1;
+        //sphereMaterial.specularIntensity = 1.8;
+        
+        // NO emissive - we want reflective metal, not glowing material
+        sphereMaterial.emissiveColor = new Color3(0, 0, 0);
+        
+        // Good ambient response for visibility
+        sphereMaterial.ambientColor = new Color3(0.8, 0.8, 0.8);
+        
+        // Physical rendering
+        sphereMaterial.usePhysicalLightFalloff = true;
+        
         pin.material = sphereMaterial;
 
         var pins: InstancedMesh[] = [];
@@ -183,7 +273,8 @@ class App {
         // Add a ground plane for reference
         var ground = MeshBuilder.CreateGround("ground", { width: totalWidth, height: totalDepth }, scene);
         var groundMaterial = new StandardMaterial("groundMat", scene);
-        groundMaterial.diffuseColor = new Color3(0.2, 0.5, 0.3); // Green color
+        groundMaterial.diffuseColor = new Color3(0.15, 0.15, 0.18); // Dark neutral base
+        groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1); // Minimal reflection
         ground.material = groundMaterial;
         
         // START RENDER LOOP BEFORE XR INITIALIZATION

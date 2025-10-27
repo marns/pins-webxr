@@ -77,12 +77,18 @@ export class Viewer {
       }
 
       // Listen for the remote stream
-      this.call.on('stream', (remoteStream) => {
+      this.call.on('stream', async (remoteStream) => {
         console.log('Received remote stream with tracks:', remoteStream.getTracks().length);
         remoteStream.getTracks().forEach(track => {
           console.log('Track:', track.kind, 'enabled:', track.enabled);
         });
         videoElement.srcObject = remoteStream;
+        try {
+          await videoElement.play();
+          console.log('Video playback started');
+        } catch (err) {
+          console.warn('Video play error (may be recoverable):', err);
+        }
         onConnected();
       });
 
