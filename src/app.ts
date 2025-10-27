@@ -293,6 +293,152 @@ class App {
         groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1); // Minimal reflection
         ground.material = groundMaterial;
         
+        // === Visualization controls (tweakable without reload) ===
+        const vizParams = {
+            enabled: true,        // Master enable for enhancement pipeline
+            rawMode: false,       // Bypass all processing and use raw intensity
+            useInverse: false,    // Use inverse (disparity) domain
+            robustK: 5,         // Scale of robust normalization window
+            gamma: 3.0,           // S-curve strength
+            detailAlpha: 0.6,     // Detail boost amount
+            sigmaS: 1.0,          // Bilateral spatial sigma (pixels)
+            sigmaR: 0.08,         // Bilateral range sigma (value units)
+            temporalLerp: 0.1     // Smoothing for center/scale over time
+        };
+
+        // Simple on-screen UI to crank knobs
+        const panel = document.createElement('div');
+        panel.style.position = 'fixed';
+        panel.style.top = '10px';
+        panel.style.left = '10px';
+        panel.style.padding = '10px';
+        panel.style.background = 'rgba(0,0,0,0.55)';
+        panel.style.color = '#fff';
+        panel.style.font = '12px system-ui, sans-serif';
+        panel.style.borderRadius = '6px';
+        panel.style.zIndex = '9999';
+        panel.style.backdropFilter = 'blur(4px)';
+        panel.style.maxWidth = '240px';
+        panel.style.userSelect = 'none';
+        panel.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                <strong>Depth Enhance</strong>
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <input id="rawMode" type="checkbox"> Raw
+                </label>
+            </div>
+            <label style="display:flex;justify-content:space-between;gap:8px;margin:4px 0;">
+                <span>Enable</span>
+                <input id="enabled" type="checkbox" checked>
+            </label>
+            <label style="display:flex;justify-content:space-between;gap:8px;margin:4px 0;">
+                <span>Inverse</span>
+                <input id="useInverse" type="checkbox" checked>
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>robustK: <span id="robustKVal"></span></div>
+                <input id="robustK" type="range" min="1" max="5" step="0.1" value="5">
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>gamma: <span id="gammaVal"></span></div>
+                <input id="gamma" type="range" min="0.6" max="3" step="0.05" value="3.0">
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>detail: <span id="detailVal"></span></div>
+                <input id="detailAlpha" type="range" min="0" max="1.5" step="0.05" value="0.6">
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>sigmaS: <span id="sigmaSVal"></span> px</div>
+                <input id="sigmaS" type="range" min="0.0" max="3.0" step="0.1" value="1.0">
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>sigmaR: <span id="sigmaRVal"></span></div>
+                <input id="sigmaR" type="range" min="0.01" max="0.5" step="0.01" value="0.08">
+            </label>
+            <label style="display:block;margin:6px 0;">
+                <div>temporal: <span id="temporalVal"></span></div>
+                <input id="temporalLerp" type="range" min="0.0" max="0.5" step="0.01" value="0.1">
+            </label>
+        `;
+        document.body.appendChild(panel);
+        const byId = (id: string) => panel.querySelector(`#${id}`) as HTMLInputElement;
+        const bindCheckbox = (id: keyof typeof vizParams) => {
+            const el = byId(id as string);
+            el.checked = (vizParams as any)[id];
+            el.oninput = () => ((vizParams as any)[id] = el.checked);
+        };
+        const bindRange = (id: keyof typeof vizParams, valId: string, fmt = (v:number)=>v.toFixed(2)) => {
+            const el = byId(id as string);
+            const valEl = panel.querySelector(`#${valId}`) as HTMLElement;
+            const update = () => { (vizParams as any)[id] = parseFloat(el.value); valEl.textContent = fmt(parseFloat(el.value)); };
+            update();
+            el.oninput = update;
+        };
+        bindCheckbox('enabled');
+        bindCheckbox('rawMode');
+        bindCheckbox('useInverse');
+        bindRange('robustK', 'robustKVal');
+        bindRange('gamma', 'gammaVal');
+        bindRange('detailAlpha', 'detailVal');
+        bindRange('sigmaS', 'sigmaSVal');
+        bindRange('sigmaR', 'sigmaRVal');
+        bindRange('temporalLerp', 'temporalVal');
+
+        // --- Helpers: robust stats ---
+        function medianInPlace(arr: number[]): number {
+            if (arr.length === 0) return 0;
+            arr.sort((a,b)=>a-b);
+            const mid = Math.floor(arr.length/2);
+            return arr.length % 2 ? arr[mid] : (arr[mid-1] + arr[mid]) * 0.5;
+        }
+        function computeMedianAndMad(values: number[]): { m: number; s: number } {
+            if (values.length === 0) return { m: 0, s: 1 };
+            const m = medianInPlace(values.slice());
+            const devs = values.map(v => Math.abs(v - m));
+            const mad = medianInPlace(devs);
+            const s = mad > 1e-8 ? 1.4826 * mad : 1; // scale to ~= std if normal
+            return { m, s };
+        }
+
+        // --- Helpers: tiny bilateral blur on a small grid ---
+        const W = gridWidth;
+        const H = gridDepth;
+        const N = W * H;
+        const dBuf = new Float32Array(N);
+        const blurBuf = new Float32Array(N);
+        const validMask = new Uint8Array(N);
+
+        function bilateral3x3(src: Float32Array, dst: Float32Array, sigmaS: number, sigmaR: number) {
+            const r = 1; // 3x3
+            const twoSigmaS2 = 2 * sigmaS * sigmaS + 1e-6;
+            const twoSigmaR2 = 2 * sigmaR * sigmaR + 1e-6;
+            for (let y=0; y<H; y++) {
+                for (let x=0; x<W; x++) {
+                    const idx = y*W + x;
+                    if (!validMask[idx]) { dst[idx] = 0; continue; }
+                    const center = src[idx];
+                    let sum = 0, wsum = 0;
+                    for (let dy=-r; dy<=r; dy++) {
+                        const yy = Math.min(H-1, Math.max(0, y+dy));
+                        for (let dx=-r; dx<=r; dx++) {
+                            const xx = Math.min(W-1, Math.max(0, x+dx));
+                            const j = yy*W + xx;
+                            if (!validMask[j]) continue;
+                            const gs = Math.exp(-(dx*dx + dy*dy)/twoSigmaS2);
+                            const gr = Math.exp(-((src[j]-center)*(src[j]-center))/twoSigmaR2);
+                            const w = gs * gr;
+                            sum += w * src[j];
+                            wsum += w;
+                        }
+                    }
+                    dst[idx] = wsum > 1e-6 ? sum / wsum : center;
+                }
+            }
+        }
+
+        // Temporal state for robust params
+        let m_t = 0, s_t = 1;
+
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
@@ -337,30 +483,76 @@ class App {
                 const imageData = videoCtx.getImageData(0, 0, gridDepth, gridWidth);
                 const pixels = imageData.data;
                 
-                // Update each pin height based on corresponding pixel intensity
-                pins.forEach((pinInstance, index) => {
-                    // Calculate grid position in 3D space
-                    const x = index % gridWidth;  // 0-63 (X axis, left-right)
-                    const z = Math.floor(index / gridWidth);  // 0-35 (Z axis, front-back)
-                    
-                    // Swap X and Z to rotate 90 degrees: video X -> pin Z, video Y -> pin X
-                    const videoX = z;  // Use pin's Z as video's X (0-35)
-                    const videoY = x;  // Use pin's X as video's Y (0-63)
-                    const pixelIndex = (videoY * gridDepth + videoX) * 4;
-                    
-                    // Calculate grayscale intensity (0-255)
-                    const r = pixels[pixelIndex];
-                    const g = pixels[pixelIndex + 1];
-                    const b = pixels[pixelIndex + 2];
+                // Build working buffers: normalized intensity in [0,1]; zero treated as invalid
+                const validValues: number[] = [];
+                for (let idx=0; idx<N; idx++) {
+                    const x = idx % gridWidth;
+                    const z = Math.floor(idx / gridWidth);
+                    const videoX = z;
+                    const videoY = x;
+                    const p = (videoY * gridDepth + videoX) * 4;
+                    const r = pixels[p];
+                    const g = pixels[p + 1];
+                    const b = pixels[p + 2];
                     const intensity = (r + g + b) / 3;
-                    
-                    // Map intensity (0-255) to pin height (0-1)
-                    // Darker pixels = lower pins, brighter pixels = higher pins
-                    const normalizedIntensity = intensity / 255;
-                    
-                    // Set pin Y position
-                    pinInstance.position.y = normalizedIntensity - 0.5;
-                });
+                    const u = intensity / 255;
+                    // Treat exact zero as invalid hole
+                    const isValid = u > 0.0;
+                    validMask[idx] = isValid ? 1 : 0;
+                    // Domain transform
+                    const base = vizParams.useInverse ? (1.0 / Math.max(u, 1e-6)) : u;
+                    dBuf[idx] = base;
+                    if (isValid) validValues.push(base);
+                }
+
+                // If enhancement disabled or raw requested, skip processing
+                if (!(vizParams.enabled) || vizParams.rawMode) {
+                    pins.forEach((pinInstance, index) => {
+                        const x = index % gridWidth;
+                        const z = Math.floor(index / gridWidth);
+                        const videoX = z;
+                        const videoY = x;
+                        const pixelIndex = (videoY * gridDepth + videoX) * 4;
+                        const r = pixels[pixelIndex];
+                        const g = pixels[pixelIndex + 1];
+                        const b = pixels[pixelIndex + 2];
+                        const intensity = (r + g + b) / 3;
+                        const u = intensity / 255;
+                        pinInstance.position.y = u - 0.5;
+                    });
+                } else {
+                    // Robust center/scale on disparity domain
+                    const { m, s } = computeMedianAndMad(validValues);
+                    // Temporal smoothing
+                    const a = Math.max(0, Math.min(1, vizParams.temporalLerp));
+                    m_t = (1 - a) * m_t + a * m;
+                    s_t = (1 - a) * s_t + a * s;
+                    const k = vizParams.robustK;
+
+                    // Optional detail boost via bilateral unsharp mask
+                    if (vizParams.detailAlpha > 1e-3 && (vizParams.sigmaS > 1e-3 || vizParams.sigmaR > 1e-3)) {
+                        bilateral3x3(dBuf, blurBuf, vizParams.sigmaS, vizParams.sigmaR);
+                        for (let i=0;i<N;i++) {
+                            if (!validMask[i]) continue;
+                            const detail = dBuf[i] - blurBuf[i];
+                            dBuf[i] = dBuf[i] + vizParams.detailAlpha * detail;
+                        }
+                    }
+
+                    // Map through robust normalization and S-curve
+                    for (let idx=0; idx<N; idx++) {
+                        const valid = !!validMask[idx];
+                        let yNorm = 0; // default background
+                        if (valid) {
+                            const xNorm = Math.max(-1, Math.min(1, (dBuf[idx] - m_t) / (Math.max(1e-6, k * s_t))));
+                            const y = 0.5 + 0.5 * Math.tanh(vizParams.gamma * xNorm);
+                            yNorm = y;
+                        }
+                        // Apply to pin height
+                        const pinInstance = pins[idx];
+                        pinInstance.position.y = yNorm - 0.5;
+                    }
+                }
             }
             
             scene.render();

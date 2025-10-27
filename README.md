@@ -60,3 +60,48 @@ Examples
   - `VITE_CROP_HEIGHT_PCT=0.5`
   - `VITE_CROP_CENTER_X_PCT=0.5`
   - `VITE_CROP_CENTER_Y_PCT=0.5`
+
+**Depth Enhancement**
+- Purpose: exaggerate subtle depth differences (e.g., facial relief) while keeping a stable appearance. All controls are available in an on‑screen panel.
+
+**Signal Assumptions**
+- Input is a single‑channel depth stream encoded as 8‑bit grayscale in the video; black (0) means invalid/missing depth.
+- The app downsamples to a `36 × 64` grid and maps values to pin heights.
+
+**Equations**
+- Base normalization: `u = intensity / 255` in `[0, 1]` (per pixel). Zeros are treated as invalid holes.
+- Disparity domain (optional): `d = 1 / max(u, eps)` if Inverse is enabled; else `d = u`.
+- Robust center and scale (per frame on valid pixels):
+  - `m = median(d)`
+  - `s = 1.4826 * median(|d − m|)`  (MAD scaled to std under normality)
+- Temporal smoothing (to reduce flicker), with `a = temporalLerp` in `[0,1]`:
+  - `m_t = (1 − a) * m_{t−1} + a * m`
+  - `s_t = (1 − a) * s_{t−1} + a * s`
+- Robust normalization and clamp:
+  - `x = clamp((d − m_t) / (k * s_t + eps), −1, 1)` where `k = robustK`.
+- S‑curve contrast (mid‑tone boost):
+  - `y = 0.5 + 0.5 * tanh(gamma * x)` where `gamma = gamma`.
+- Edge‑preserving detail boost (optional bilateral unsharp mask):
+  - `blur = bilateral3x3(d, sigmaS, sigmaR)`
+  - `d' = d + alpha * (d − blur)` where `alpha = detailAlpha`
+  - If enabled, `d'` replaces `d` before normalization.
+- Final pin height:
+  - Enhanced: `h = y − 0.5`
+  - Raw mode (bypass): `h_raw = u − 0.5`
+- Invalid pixels (zeros): treated as background (`h = −0.5`).
+
+**Parameters**
+- `Enable`: turn enhancement on/off without losing settings.
+- `Raw`: bypass all processing and use original normalized intensity.
+- `Inverse`: compute in disparity space (`1/u`) to emphasize nearby depth differences.
+- `robustK` (≈ 1–5): width of the normalized range around the median; smaller boosts contrast more.
+- `gamma` (≈ 0.6–3): strength of the S‑curve; higher increases mid‑tone contrast.
+- `detail` (`detailAlpha`, 0–1.5): amount of detail added from the bilateral unsharp mask.
+- `sigmaS` (0–3 px): bilateral spatial sigma; larger gathers a wider neighborhood.
+- `sigmaR` (0.01–0.5): bilateral range sigma in value units; smaller preserves edges more aggressively.
+- `temporal` (`temporalLerp`, 0–0.5): how fast robust stats update; higher responds faster but may flicker.
+
+**Tips**
+- If depth looks inverted or unstable, try toggling `Inverse` off and retuning `robustK` and `gamma`.
+- Start with `robustK=2.5`, `gamma=1.4`, `detail=0.6`, `sigmaS=1.0`, `sigmaR=0.08`, `temporal=0.10`.
+- The pipeline runs on CPU over a small grid (36×64) and is lightweight.
