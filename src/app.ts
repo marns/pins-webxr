@@ -6,6 +6,24 @@ import {
     LookingGlassConfig
   } from "@lookingglass/webxr";
 import { Viewer } from "./viewer";
+import { getVideoCropConfig } from "./videoConfig";
+
+// One-time Vite env snapshot to debug env injection
+try {
+    const envAny: any = (import.meta as any).env || {};
+    if (typeof window !== 'undefined' && !(window as any).__loggedViteEnv) {
+        console.log("Vite env snapshot:", {
+            mode: envAny.MODE,
+            base: envAny.BASE_URL,
+            keys: Object.keys(envAny || {}),
+            VITE_CROP_WIDTH_PCT: envAny?.VITE_CROP_WIDTH_PCT,
+            VITE_CROP_HEIGHT_PCT: envAny?.VITE_CROP_HEIGHT_PCT,
+            VITE_CROP_CENTER_X_PCT: envAny?.VITE_CROP_CENTER_X_PCT,
+            VITE_CROP_CENTER_Y_PCT: envAny?.VITE_CROP_CENTER_Y_PCT
+        });
+        (window as any).__loggedViteEnv = true;
+    }
+} catch {}
   
 
 class App {
@@ -102,6 +120,11 @@ class App {
         videoCanvas.width = gridDepth;   // 36 (will map to Z axis)
         videoCanvas.height = gridWidth;  // 64 (will map to X axis)
         const videoCtx = videoCanvas.getContext("2d", { willReadFrequently: true });
+        
+        // Load crop configuration from env (center/size in percentages)
+        const cropCfg = getVideoCropConfig();
+        console.log("Video crop config:", cropCfg);
+        let loggedCropRect = false;
         
         // Initialize WebRTC connection to minimal signaling server (POST /offer)
         const viewer = new Viewer();
@@ -275,9 +298,40 @@ class App {
         engine.runRenderLoop(() => {
             // Process video frame and update pin heights
             if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && videoCtx) {
-                // Draw video frame to canvas (downsampled to rotated resolution)
-                // Canvas is 36w x 64h, which rotates the landscape video
-                videoCtx.drawImage(videoElement, 0, 0, gridDepth, gridWidth);
+                // Draw cropped video frame to canvas before downsampling
+                // Compute source crop rect in the input video space
+                const vw = videoElement.videoWidth || 0;
+                const vh = videoElement.videoHeight || 0;
+                if (vw > 0 && vh > 0) {
+                    const srcW = Math.max(1, Math.floor(vw * cropCfg.widthPct));
+                    const srcH = Math.max(1, Math.floor(vh * cropCfg.heightPct));
+                    const centerX = cropCfg.centerX * vw;
+                    const centerY = cropCfg.centerY * vh;
+                    let sx = Math.round(centerX - srcW / 2);
+                    let sy = Math.round(centerY - srcH / 2);
+                    // Clamp to valid bounds
+                    sx = Math.max(0, Math.min(sx, vw - srcW));
+                    sy = Math.max(0, Math.min(sy, vh - srcH));
+
+                    if (!loggedCropRect) {
+                        console.log("Computed crop rect:", { vw, vh, sx, sy, srcW, srcH, destW: gridDepth, destH: gridWidth });
+                        loggedCropRect = true;
+                    }
+
+                    // Canvas is 36w x 64h, which rotates the landscape video
+                    // Use 9-arg drawImage to crop pre-downsample
+                    videoCtx.drawImage(
+                        videoElement,
+                        sx,
+                        sy,
+                        srcW,
+                        srcH,
+                        0,
+                        0,
+                        gridDepth,
+                        gridWidth
+                    );
+                }
                 
                 // Get pixel data
                 const imageData = videoCtx.getImageData(0, 0, gridDepth, gridWidth);

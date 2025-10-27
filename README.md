@@ -44,3 +44,19 @@ Where Things Live
 - `src/viewer.ts`: Minimal WebRTC client (creates offer, POSTs to `/offer`, sets remote answer, attaches the video track)
 - `src/webrtcConfig.ts`: Small helpers for env‑driven endpoint and ICE configuration
 - `src/app.ts`: App wiring; creates the Babylon scene and starts the WebRTC connection
+ - `src/videoConfig.ts`: Env‑driven video crop settings applied before downsampling
+
+Video Crop (Optional)
+- Purpose: crop a sub‑region of the incoming video before downsampling to the pin grid. Useful to focus on the subject and improve detail.
+- Env vars (fractions 0–1):
+  - `VITE_CROP_CENTER_X_PCT` default `0.5` (center X of crop)
+  - `VITE_CROP_CENTER_Y_PCT` default `0.5` (center Y of crop)
+  - `VITE_CROP_WIDTH_PCT` default `1` (relative width of crop)
+  - `VITE_CROP_HEIGHT_PCT` default `1` (relative height of crop)
+
+Examples
+- Middle 50% of the frame, centered:
+  - `VITE_CROP_WIDTH_PCT=0.5`
+  - `VITE_CROP_HEIGHT_PCT=0.5`
+  - `VITE_CROP_CENTER_X_PCT=0.5`
+  - `VITE_CROP_CENTER_Y_PCT=0.5`
