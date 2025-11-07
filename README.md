@@ -45,6 +45,7 @@ Where Things Live
 - `src/webrtcConfig.ts`: Small helpers for env‑driven endpoint and ICE configuration
 - `src/app.ts`: App wiring; creates the Babylon scene and starts the WebRTC connection
  - `src/videoConfig.ts`: Env‑driven video crop settings applied before downsampling
+ - `src/config.ts`: Central app configuration with `.env` overrides
 
 Video Crop (Optional)
 - Purpose: crop a sub‑region of the incoming video before downsampling to the pin grid. Useful to focus on the subject and improve detail.
@@ -105,3 +106,40 @@ Examples
 - If depth looks inverted or unstable, try toggling `Inverse` off and retuning `robustK` and `gamma`.
 - Start with `robustK=2.5`, `gamma=1.4`, `detail=0.6`, `sigmaS=1.0`, `sigmaR=0.08`, `temporal=0.10`.
 - The pipeline runs on CPU over a small grid (36×64) and is lightweight.
+
+Configuration
+- All config has sensible defaults and can be overridden via `.env`.
+- Edit `src/config.ts` to change defaults in-code.
+
+Env Vars
+- Grid/pins:
+  - `VITE_GRID_WIDTH` (default `36`)
+  - `VITE_ASPECT_RATIO` (default `1.7777777778`)
+  - `VITE_PIN_SPACING` (default `0.1`)
+- Effects:
+  - `VITE_EFFECT_HALLOWEEN` (default `true`)
+- Visualization defaults:
+  - `VITE_VIZ_ENABLED` (default `true`)
+  - `VITE_VIZ_RAW` (default `false`)
+  - `VITE_VIZ_INVERSE` (default `false`)
+  - `VITE_VIZ_ROBUST_K` (default `5`)
+  - `VITE_VIZ_GAMMA` (default `3.0`)
+  - `VITE_VIZ_DETAIL` (default `0.6`)
+  - `VITE_VIZ_SIGMA_S` (default `1.0`)
+  - `VITE_VIZ_SIGMA_R` (default `0.08`)
+  - `VITE_VIZ_TEMPORAL` (default `0.1`)
+- Looking Glass view:
+  - `VITE_LKG_TARGET_X` (default `0`)
+  - `VITE_LKG_TARGET_Y` (default `-0.5`)
+  - `VITE_LKG_TARGET_Z` (default `0`)
+  - `VITE_LKG_TARGET_DIAM` (default `4`)
+  - `VITE_LKG_FOVY_DEG` (default `40`)
+  - `VITE_LKG_DEPTHINESS` (default `0.6`)
+  - `VITE_LKG_TRACKBALL_X_DEG` (default `0`)
+  - `VITE_LKG_TRACKBALL_Y_DEG` (default `90`)
+  - `VITE_LKG_TRACKBALL_Z_DEG` (default `0`)
+
+Effects
+- Toggle the Halloween mood in the on‑screen panel under Effects.
+- Implementation lives in `src/effects.ts` as `enableHalloweenMood(scene, engine)` which returns a disposer to turn it off and restore prior post‑processing settings.
+- Use the same pattern to add more composable, toggleable effects.

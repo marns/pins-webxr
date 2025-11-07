@@ -1,12 +1,15 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, Texture } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, Texture } from "@babylonjs/core";
+import { ColorCurves } from "@babylonjs/core/Materials/colorCurves";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
   } from "@lookingglass/webxr";
 import { Viewer } from "./viewer";
+import { enableHalloweenMood } from "./effects";
 import { getVideoCropConfig } from "./videoConfig";
+import { AppConfig } from "./config";
 
 // One-time Vite env snapshot to debug env injection
 try {
@@ -32,15 +35,15 @@ class App {
         // Configure Looking Glass settings BEFORE creating the polyfill
         // Use object assignment to ensure proper initialization
         Object.assign(LookingGlassConfig, {
-            targetX: 0,        // X position of the target point (center of pin grid)
-            targetY: -0.5,     // Y position of the target point (middle of pin heights)
-            targetZ: 0,        // Z position of the target point (center of pin grid)
-            targetDiam: 4,    // Diameter of the viewing volume (encompasses 10x5.6 grid)
-            fovy: (40 * Math.PI) / 180,  // Field of view - 40 degrees
-            depthiness: 0.6,
-            trackballX: 0,
-            trackballY: Math.PI / 2,  // Rotate to look down from above
-            trackballZ: 0
+            targetX: AppConfig.lookingGlass.targetX,
+            targetY: AppConfig.lookingGlass.targetY,
+            targetZ: AppConfig.lookingGlass.targetZ,
+            targetDiam: AppConfig.lookingGlass.targetDiam,
+            fovy: AppConfig.lookingGlass.fovy,
+            depthiness: AppConfig.lookingGlass.depthiness,
+            trackballX: AppConfig.lookingGlass.trackballX,
+            trackballY: AppConfig.lookingGlass.trackballY,  // Rotate to look down from above
+            trackballZ: AppConfig.lookingGlass.trackballZ
         });
         
         // Initialize Looking Glass WebXR Polyfill
@@ -103,8 +106,8 @@ class App {
         // Define grid dimensions (used for both pin grid and video downsampling)
         // Swapped to create landscape orientation when viewed from above
         // gridWidth (X axis) = 36, gridDepth (Z axis) = 64 for proper landscape display
-        const gridWidth = 36;
-        const gridDepth = Math.round(gridWidth * 1.7777777777777777);  // 64 pixels, maintains 16:9 ratio
+        const gridWidth = AppConfig.grid.width;
+        const gridDepth = AppConfig.grid.depth;  // maintains configured aspect ratio
 
         // Create video element for WebRTC stream
         const videoElement = document.createElement("video");
@@ -166,17 +169,18 @@ class App {
         skyboxMaterial.backFaceCulling = false;
         skyboxMaterial.disableLighting = true;
         
-        // Create a bright gradient from light blue/white at top to light gray at bottom
-        skyboxMaterial.emissiveColor = new Color3(0.9, 0.9, 0.95);
+        // Dim, slightly red-tinted sky to let red lighting dominate
+        skyboxMaterial.emissiveColor = new Color3(0.12, 0.03, 0.03);
         skybox.material = skyboxMaterial;
         skybox.infiniteDistance = true;
         
         // Create environment texture for reflections
         const hdrTexture = CubeTexture.CreateFromPrefilteredData("environmentSpecular.env", scene);
         scene.environmentTexture = hdrTexture;
-        scene.environmentIntensity = .5;
+        scene.environmentIntensity = 0.15;
         
-        scene.clearColor = new Color3(0.8, 0.8, 0.85).toColor4();
+        scene.clearColor = new Color3(0.05, 0.0, 0.0).toColor4();
+        // Keep fog off for performance
         
         // Moderate ambient lighting
         // const ambientLight = new HemisphericLight("ambientLight", new Vector3(0, 1, 0), scene);
@@ -230,6 +234,8 @@ class App {
         grazingLight2.intensity = 0;
         grazingLight2.diffuse = new Color3(0.9, 0.9, 0.9);
         grazingLight2.specular = new Color3(2.0, 2.0, 2.0);
+
+        // Halloween mood is now toggleable via UI; default enabled below
         
         // Create a sphere at the origin (where Looking Glass will focus)
         //var sphere: Mesh = MeshBuilder.CreateSphere("sphere", { diameter: 1 }, scene);
@@ -245,8 +251,8 @@ class App {
         // Full metallic for true metal appearance
         sphereMaterial.metallic = 1.0;
         
-        // Bright silver/chrome base color
-        sphereMaterial.albedoColor = new Color3(0.9, 0.9, 0.92);
+        // Slightly red metal to push overall redness without heavy lighting
+        sphereMaterial.albedoColor = new Color3(0.9, 0.28, 0.28);
         
         // High reflectance for chrome-like appearance
         sphereMaterial.metallicReflectanceColor = new Color3(1.0, 1.0, 1.0);
@@ -260,8 +266,8 @@ class App {
         //sphereMaterial.directIntensity = 1;
         //sphereMaterial.specularIntensity = 1.8;
         
-        // NO emissive - we want reflective metal, not glowing material
-        sphereMaterial.emissiveColor = new Color3(0, 0, 0);
+        // A touch of emissive red helps keep the scene red with fewer lights
+        sphereMaterial.emissiveColor = new Color3(0.06, 0.01, 0.01);
         
         // Good ambient response for visibility
         sphereMaterial.ambientColor = new Color3(0.8, 0.8, 0.8);
@@ -272,7 +278,7 @@ class App {
         pin.material = sphereMaterial;
 
         var pins: InstancedMesh[] = [];
-        const pinSpacing = 0.1;
+        const pinSpacing = AppConfig.grid.pinSpacing;
         const totalWidth = gridWidth * pinSpacing;
         const totalDepth = gridDepth * pinSpacing;
         
@@ -295,15 +301,15 @@ class App {
         
         // === Visualization controls (tweakable without reload) ===
         const vizParams = {
-            enabled: true,        // Master enable for enhancement pipeline
-            rawMode: false,       // Bypass all processing and use raw intensity
-            useInverse: false,    // Use inverse (disparity) domain
-            robustK: 5,         // Scale of robust normalization window
-            gamma: 3.0,           // S-curve strength
-            detailAlpha: 0.6,     // Detail boost amount
-            sigmaS: 1.0,          // Bilateral spatial sigma (pixels)
-            sigmaR: 0.08,         // Bilateral range sigma (value units)
-            temporalLerp: 0.1     // Smoothing for center/scale over time
+            enabled: AppConfig.viz.enabled,        // Master enable for enhancement pipeline
+            rawMode: AppConfig.viz.rawMode,        // Bypass all processing and use raw intensity
+            useInverse: AppConfig.viz.useInverse,  // Use inverse (disparity) domain
+            robustK: AppConfig.viz.robustK,        // Scale of robust normalization window
+            gamma: AppConfig.viz.gamma,            // S-curve strength
+            detailAlpha: AppConfig.viz.detailAlpha,// Detail boost amount
+            sigmaS: AppConfig.viz.sigmaS,          // Bilateral spatial sigma (pixels)
+            sigmaR: AppConfig.viz.sigmaR,          // Bilateral range sigma (value units)
+            temporalLerp: AppConfig.viz.temporalLerp // Smoothing for center/scale over time
         };
 
         // Simple on-screen UI to crank knobs
@@ -359,6 +365,14 @@ class App {
                 <div>temporal: <span id="temporalVal"></span></div>
                 <input id="temporalLerp" type="range" min="0.0" max="0.5" step="0.01" value="0.1">
             </label>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Effects</strong>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input id="halloweenMood" type="checkbox" checked> Halloween
+                    </label>
+                </div>
+            </div>
         `;
         document.body.appendChild(panel);
         const byId = (id: string) => panel.querySelector(`#${id}`) as HTMLInputElement;
@@ -383,6 +397,20 @@ class App {
         bindRange('sigmaS', 'sigmaSVal');
         bindRange('sigmaR', 'sigmaRVal');
         bindRange('temporalLerp', 'temporalVal');
+
+        // --- Effect toggles ---
+        let disposeHalloween: null | (() => void) = null;
+        const setupHalloween = (enabled: boolean) => {
+            if (enabled) {
+                if (!disposeHalloween) disposeHalloween = enableHalloweenMood(scene, engine);
+            } else {
+                if (disposeHalloween) { disposeHalloween(); disposeHalloween = null; }
+            }
+        };
+        const halloweenEl = byId('halloweenMood');
+        halloweenEl.checked = AppConfig.effects.halloweenDefault;
+        setupHalloween(halloweenEl.checked);
+        halloweenEl.oninput = () => setupHalloween(halloweenEl.checked);
 
         // --- Helpers: robust stats ---
         function medianInPlace(arr: number[]): number {
