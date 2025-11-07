@@ -3,6 +3,14 @@ import { getOfferEndpoint, getRTCConfiguration } from './webrtcConfig';
 export class Viewer {
   private pc: RTCPeerConnection | null = null;
   private stream: MediaStream | null = null;
+  private reconnectTimer: any = null;
+  private shouldReconnect = false;
+  private isConnecting = false;
+  private lastVideoElement: HTMLVideoElement | null = null;
+  private lastOnConnected: (() => void) | null = null;
+  private lastOnError: ((error: string) => void) | null = null;
+  private lastOfferUrl: string | undefined;
+  private readonly reconnectIntervalMs = 5000;
 
   async connect(
     videoElement: HTMLVideoElement,
@@ -10,6 +18,15 @@ export class Viewer {
     onError: (error: string) => void,
     offerUrl?: string
   ): Promise<void> {
+    // Save args for potential reconnection attempts
+    this.lastVideoElement = videoElement;
+    this.lastOnConnected = onConnected;
+    this.lastOnError = onError;
+    this.lastOfferUrl = offerUrl;
+    this.shouldReconnect = true;
+
+    if (this.isConnecting) return; // Avoid parallel connects
+    this.isConnecting = true;
     try {
       const url = offerUrl || getOfferEndpoint();
       console.log('Connecting to signaling endpoint:', url);
@@ -89,6 +106,8 @@ export class Viewer {
       const handleState = () => {
         console.log('PC state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
+          // Clear any pending reconnect attempts when connection is restored
+          this.clearReconnectTimer();
           onConnected();
         } else if (
           pc.connectionState === 'failed' ||
@@ -96,6 +115,8 @@ export class Viewer {
           pc.connectionState === 'closed'
         ) {
           onError(`Peer connection ${pc.connectionState}`);
+          // Kick off reconnect attempts
+          this.scheduleReconnect();
         }
       };
       pc.onconnectionstatechange = handleState;
@@ -104,10 +125,16 @@ export class Viewer {
     } catch (error: any) {
       console.error('Failed to connect to server:', error);
       onError(error?.message || 'Failed to connect');
+      // If initial connect failed, try again on interval
+      this.scheduleReconnect();
     }
+    this.isConnecting = false;
   }
 
   disconnect() {
+    // Stop reconnect attempts
+    this.shouldReconnect = false;
+    this.clearReconnectTimer();
     if (this.pc) {
       try { this.pc.close(); } catch {}
       this.pc = null;
@@ -117,5 +144,41 @@ export class Viewer {
       this.stream = null;
     }
     console.log('Viewer disconnected');
+  }
+
+  private scheduleReconnect() {
+    if (!this.shouldReconnect) return;
+    if (this.reconnectTimer) return; // Already scheduled
+
+    console.log(`Scheduling reconnect in ${this.reconnectIntervalMs}ms...`);
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      if (!this.shouldReconnect) return;
+      console.log('Attempting reconnect...');
+      try {
+        // Ensure any previous connection is fully closed before attempting
+        this.disconnect();
+      } catch {}
+
+      // Restore shouldReconnect after disconnect cleared it
+      this.shouldReconnect = true;
+
+      if (this.lastVideoElement && this.lastOnConnected && this.lastOnError) {
+        await this.connect(
+          this.lastVideoElement,
+          this.lastOnConnected,
+          this.lastOnError,
+          this.lastOfferUrl
+        );
+      }
+      // If connect fails, scheduleReconnect() inside connect() will reschedule
+    }, this.reconnectIntervalMs);
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 }
