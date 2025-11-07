@@ -29,7 +29,7 @@ const DEFAULTS = {
   pinLift: 0.01,
   pinHeightScale: 2,
   pinLerp: 0.25,
-  pinMaxStep: 0.03,
+  pinMaxStep: 0.06,
   // Effects
   halloweenDefault: false,
   // Visualization defaults

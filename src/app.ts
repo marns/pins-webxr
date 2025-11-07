@@ -392,6 +392,10 @@ class App {
                     <div>height smoothing: <span id="pinLerpVal"></span></div>
                     <input id="pinLerp" type="range" min="0" max="1" step="0.01">
                 </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>max height diff: <span id="pinMaxStepVal"></span></div>
+                    <input id="pinMaxStep" type="range" min="0.005" max="0.2" step="0.005">
+                </label>
             </div>
         `;
         document.body.appendChild(panel);
@@ -433,6 +437,14 @@ class App {
         pinLerpEl.value = String(pinLerp);
         updatePinLerp();
         pinLerpEl.oninput = updatePinLerp;
+
+        // Pin max height diff (per-frame clamp)
+        const pinMaxStepEl = byId('pinMaxStep');
+        const pinMaxStepValEl = panel.querySelector('#pinMaxStepVal') as HTMLElement;
+        const updatePinMaxStep = () => { pinMaxStep = Math.max(0, parseFloat(pinMaxStepEl.value) || 0); pinMaxStepValEl.textContent = pinMaxStep.toFixed(3); };
+        pinMaxStepEl.value = String(pinMaxStep);
+        updatePinMaxStep();
+        pinMaxStepEl.oninput = updatePinMaxStep;
 
         // --- Effect toggles ---
         let disposeHalloween: null | (() => void) = null;
