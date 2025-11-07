@@ -25,9 +25,11 @@ function degToRad(d: number): number { return (d * Math.PI) / 180; }
 const DEFAULTS = {
   gridWidth: 36,
   aspect: 16 / 9, // width*aspect => depth
-  pinSpacing: 0.1,
+  pinSpacing: 0.12,
+  pinLift: 0.01,
+  pinHeightScale: 2,
   // Effects
-  halloweenDefault: true,
+  halloweenDefault: false,
   // Visualization defaults
   vizEnabled: true,
   vizRaw: false,
@@ -56,6 +58,8 @@ export const AppConfig = {
     aspect: envNum("VITE_ASPECT_RATIO", DEFAULTS.aspect),
     get depth() { return Math.round(this.width * this.aspect); },
     pinSpacing: envNum("VITE_PIN_SPACING", DEFAULTS.pinSpacing),
+    pinLift: envNum("VITE_PIN_LIFT", DEFAULTS.pinLift),
+    pinHeightScale: envNum("VITE_PIN_HEIGHT_SCALE", DEFAULTS.pinHeightScale),
   },
   effects: {
     halloweenDefault: envBool("VITE_EFFECT_HALLOWEEN", DEFAULTS.halloweenDefault),
@@ -83,4 +87,3 @@ export const AppConfig = {
     trackballZ: degToRad(envNum("VITE_LKG_TRACKBALL_Z_DEG", DEFAULTS.lkgTrackballZDeg)),
   },
 } as const;
-

@@ -1,7 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, HemisphericLight, Mesh, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, Texture } from "@babylonjs/core";
-import { ColorCurves } from "@babylonjs/core/Materials/colorCurves";
+import { Engine, Scene, ArcRotateCamera, Vector3, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -279,6 +278,9 @@ class App {
 
         var pins: InstancedMesh[] = [];
         const pinSpacing = AppConfig.grid.pinSpacing;
+        const pinLift = AppConfig.grid.pinLift; // small tip offset above plane
+        let pinScale = AppConfig.grid.pinHeightScale; // live-adjustable via UI
+        const minPinLen = 1e-3; // avoid zero-length scaling artifacts
         const totalWidth = gridWidth * pinSpacing;
         const totalDepth = gridDepth * pinSpacing;
         
@@ -287,6 +289,9 @@ class App {
                 var pinInstance = pin.createInstance(`pin_${x}_${z}`);
                 pinInstance.position.x = x * pinSpacing - totalWidth / 2;
                 pinInstance.position.z = z * pinSpacing - totalDepth / 2;
+                // Initialize as a tiny pin whose base sits just above the plane
+                pinInstance.scaling.y = minPinLen;
+                pinInstance.position.y = pinLift + 0.5 * minPinLen;
                 pins.push(pinInstance);
             }
         }
@@ -373,6 +378,15 @@ class App {
                     </label>
                 </div>
             </div>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Pins</strong>
+                </div>
+                <label style="display:block;margin:6px 0;">
+                    <div>height scale: <span id="pinHeightScaleVal"></span>x</div>
+                    <input id="pinHeightScale" type="range" min="0.25" max="4" step="0.05">
+                </label>
+            </div>
         `;
         document.body.appendChild(panel);
         const byId = (id: string) => panel.querySelector(`#${id}`) as HTMLInputElement;
@@ -397,6 +411,14 @@ class App {
         bindRange('sigmaS', 'sigmaSVal');
         bindRange('sigmaR', 'sigmaRVal');
         bindRange('temporalLerp', 'temporalVal');
+
+        // Pin height scale slider
+        const pinScaleEl = byId('pinHeightScale');
+        const pinScaleValEl = panel.querySelector('#pinHeightScaleVal') as HTMLElement;
+        const updatePinScale = () => { pinScale = parseFloat(pinScaleEl.value) || 1; pinScaleValEl.textContent = pinScale.toFixed(2); };
+        pinScaleEl.value = String(pinScale);
+        updatePinScale();
+        pinScaleEl.oninput = updatePinScale;
 
         // --- Effect toggles ---
         let disposeHalloween: null | (() => void) = null;
@@ -546,7 +568,11 @@ class App {
                         const b = pixels[pixelIndex + 2];
                         const intensity = (r + g + b) / 3;
                         const u = intensity / 255;
-                        pinInstance.position.y = u - 0.5;
+                        const h = Math.max(0, u) * pinScale;
+                        const height = Math.max(minPinLen, h);
+                        pinInstance.scaling.y = height;
+                        // Anchor base near plane: baseY ~= pinLift
+                        pinInstance.position.y = pinLift + 0.5 * height;
                     });
                 } else {
                     // Robust center/scale on disparity domain
@@ -576,9 +602,12 @@ class App {
                             const y = 0.5 + 0.5 * Math.tanh(vizParams.gamma * xNorm);
                             yNorm = y;
                         }
-                        // Apply to pin height
+                        // Apply to pin length (anchored at plane)
                         const pinInstance = pins[idx];
-                        pinInstance.position.y = yNorm - 0.5;
+                        const h = Math.max(0, yNorm) * pinScale;
+                        const height = Math.max(minPinLen, h);
+                        pinInstance.scaling.y = height;
+                        pinInstance.position.y = pinLift + 0.5 * height;
                     }
                 }
             }

@@ -115,7 +115,9 @@ Env Vars
 - Grid/pins:
   - `VITE_GRID_WIDTH` (default `36`)
   - `VITE_ASPECT_RATIO` (default `1.7777777778`)
-  - `VITE_PIN_SPACING` (default `0.1`)
+  - `VITE_PIN_SPACING` (default `0.12`)
+  - `VITE_PIN_LIFT` (default `0.01`) — small Y offset so a 0-depth pin rests just above the ground plane to avoid z-fighting
+  - `VITE_PIN_HEIGHT_SCALE` (default `2`) — scales vertical displacement around the neutral 0.5 level
 - Effects:
   - `VITE_EFFECT_HALLOWEEN` (default `true`)
 - Visualization defaults:
