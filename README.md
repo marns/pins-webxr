@@ -118,6 +118,8 @@ Env Vars
   - `VITE_PIN_SPACING` (default `0.12`)
   - `VITE_PIN_LIFT` (default `0.01`) — small Y offset so a 0-depth pin rests just above the ground plane to avoid z-fighting
   - `VITE_PIN_HEIGHT_SCALE` (default `2`) — scales vertical displacement around the neutral 0.5 level
+  - `VITE_PIN_LERP` (default `0.25`) — 0..1 smoothing per frame for pin length changes (0 = snap, 1 = instant to target)
+  - `VITE_PIN_MAX_STEP` (default `0.03`) — caps maximum per-frame change in pin length (absolute units)
 - Effects:
   - `VITE_EFFECT_HALLOWEEN` (default `true`)
 - Visualization defaults:

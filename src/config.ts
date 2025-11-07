@@ -28,6 +28,8 @@ const DEFAULTS = {
   pinSpacing: 0.12,
   pinLift: 0.01,
   pinHeightScale: 2,
+  pinLerp: 0.25,
+  pinMaxStep: 0.03,
   // Effects
   halloweenDefault: false,
   // Visualization defaults
@@ -60,6 +62,8 @@ export const AppConfig = {
     pinSpacing: envNum("VITE_PIN_SPACING", DEFAULTS.pinSpacing),
     pinLift: envNum("VITE_PIN_LIFT", DEFAULTS.pinLift),
     pinHeightScale: envNum("VITE_PIN_HEIGHT_SCALE", DEFAULTS.pinHeightScale),
+    pinLerp: envNum("VITE_PIN_LERP", DEFAULTS.pinLerp),
+    pinMaxStep: envNum("VITE_PIN_MAX_STEP", DEFAULTS.pinMaxStep),
   },
   effects: {
     halloweenDefault: envBool("VITE_EFFECT_HALLOWEEN", DEFAULTS.halloweenDefault),

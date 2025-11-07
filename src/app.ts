@@ -280,6 +280,8 @@ class App {
         const pinSpacing = AppConfig.grid.pinSpacing;
         const pinLift = AppConfig.grid.pinLift; // small tip offset above plane
         let pinScale = AppConfig.grid.pinHeightScale; // live-adjustable via UI
+        let pinLerp = AppConfig.grid.pinLerp; // 0..1 smoothing per frame
+        let pinMaxStep = AppConfig.grid.pinMaxStep; // absolute max length change per frame
         const minPinLen = 1e-3; // avoid zero-length scaling artifacts
         const totalWidth = gridWidth * pinSpacing;
         const totalDepth = gridDepth * pinSpacing;
@@ -386,6 +388,10 @@ class App {
                     <div>height scale: <span id="pinHeightScaleVal"></span>x</div>
                     <input id="pinHeightScale" type="range" min="0.25" max="4" step="0.05">
                 </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>height smoothing: <span id="pinLerpVal"></span></div>
+                    <input id="pinLerp" type="range" min="0" max="1" step="0.01">
+                </label>
             </div>
         `;
         document.body.appendChild(panel);
@@ -419,6 +425,14 @@ class App {
         pinScaleEl.value = String(pinScale);
         updatePinScale();
         pinScaleEl.oninput = updatePinScale;
+
+        // Pin smoothing slider
+        const pinLerpEl = byId('pinLerp');
+        const pinLerpValEl = panel.querySelector('#pinLerpVal') as HTMLElement;
+        const updatePinLerp = () => { pinLerp = Math.max(0, Math.min(1, parseFloat(pinLerpEl.value) || 0)); pinLerpValEl.textContent = pinLerp.toFixed(2); };
+        pinLerpEl.value = String(pinLerp);
+        updatePinLerp();
+        pinLerpEl.oninput = updatePinLerp;
 
         // --- Effect toggles ---
         let disposeHalloween: null | (() => void) = null;
@@ -568,8 +582,11 @@ class App {
                         const b = pixels[pixelIndex + 2];
                         const intensity = (r + g + b) / 3;
                         const u = intensity / 255;
-                        const h = Math.max(0, u) * pinScale;
-                        const height = Math.max(minPinLen, h);
+                        const target = Math.max(minPinLen, Math.max(0, u) * pinScale);
+                        const h0 = pinInstance.scaling.y;
+                        const blended = h0 + (target - h0) * pinLerp;
+                        const delta = Math.max(-pinMaxStep, Math.min(pinMaxStep, blended - h0));
+                        const height = h0 + delta;
                         pinInstance.scaling.y = height;
                         // Anchor base near plane: baseY ~= pinLift
                         pinInstance.position.y = pinLift + 0.5 * height;
@@ -604,8 +621,11 @@ class App {
                         }
                         // Apply to pin length (anchored at plane)
                         const pinInstance = pins[idx];
-                        const h = Math.max(0, yNorm) * pinScale;
-                        const height = Math.max(minPinLen, h);
+                        const target = Math.max(minPinLen, Math.max(0, yNorm) * pinScale);
+                        const h0 = pinInstance.scaling.y;
+                        const blended = h0 + (target - h0) * pinLerp;
+                        const delta = Math.max(-pinMaxStep, Math.min(pinMaxStep, blended - h0));
+                        const height = h0 + delta;
                         pinInstance.scaling.y = height;
                         pinInstance.position.y = pinLift + 0.5 * height;
                     }
