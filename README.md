@@ -39,6 +39,14 @@ Scripts
 - `npm run dev`: Start Vite dev server
 - `npm run build`: Production build
 - `npm run preview`: Preview build output
+ - `npm run launch`: Start Kinect2 WebRTC server + pins-webxr together
+ - `npm run launch:bg`: Same as above, detached with logs in `logs/`
+
+Launcher
+- Script: `scripts/launch.sh` starts both services. It prefers `../kinect2-webrtc/.venv/bin/python` if present; else uses `python3` on PATH. It runs the Python module in-place via `PYTHONPATH` (no install required).
+- Foreground: `npm run launch` (Vite logs in terminal; Kinect logs in `logs/kinect2-webrtc.log`). Automatically opens the WebXR app in your browser. Ctrl+C stops both.
+- Background: `npm run launch:bg` (both detached). PIDs are printed; logs in `logs/`. Automatically opens the app when Vite is ready.
+- Options: `scripts/launch.sh --kinect-source opencv|kinect --kinect-stream color|depth|ir --host 127.0.0.1 --port 8080 --background [--no-open] [--open-url http://localhost:5173]`.
 
 Where Things Live
 - `src/viewer.ts`: Minimal WebRTC client (creates offer, POSTs to `/offer`, sets remote answer, attaches the video track)

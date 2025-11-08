@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "launch": "bash ./scripts/launch.sh",
+    "launch:bg": "bash ./scripts/launch.sh --background"
   },
   "devDependencies": {
     "@babylonjs/core": "^8.30.2",
