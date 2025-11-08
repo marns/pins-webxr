@@ -9,6 +9,7 @@ import { Viewer } from "./viewer";
 import { enableHalloweenMood } from "./effects";
 import { getVideoCropConfig } from "./videoConfig";
 import { AppConfig } from "./config";
+import { PinAudio } from "./pinAudio";
 
 // One-time Vite env snapshot to debug env injection
 try {
@@ -134,7 +135,15 @@ class App {
         let loggedCropRect = false;
         
         // Initialize WebRTC connection to minimal signaling server (POST /offer)
+        let audioEnabled = AppConfig.audio.enabled;
         const viewer = new Viewer();
+        const pinAudio = new PinAudio({
+            colorJitterHz: AppConfig.audio.colorJitterHz,
+            bulkBumpScale: AppConfig.audio.bulkBumpScale,
+            bulkDecayPerSecond: AppConfig.audio.bulkDecayPerSecond,
+            bulkMaxEnv: AppConfig.audio.bulkMaxEnv,
+        });
+        pinAudio.setMuted(!audioEnabled);
 
         // Connect after short delay to ensure page is ready
         setTimeout(() => {
@@ -290,6 +299,13 @@ class App {
         const minPinLen = 1e-3; // avoid zero-length scaling artifacts
         const totalWidth = gridWidth * pinSpacing;
         const totalDepth = gridDepth * pinSpacing;
+        const perPinMovementCap = 0.08;
+        const soundRegionsX = 6;
+        const soundRegionsZ = 4;
+        const soundRegionCount = soundRegionsX * soundRegionsZ;
+        const totalPins = gridWidth * gridDepth;
+        const pinRegionIndex = new Uint16Array(totalPins);
+        const pinsPerRegion = new Uint16Array(soundRegionCount);
         
         for (let z = 0; z < gridDepth; z++) {
             for (let x = 0; x < gridWidth; x++) {
@@ -300,9 +316,39 @@ class App {
                 pinInstance.scaling.y = minPinLen;
                 pinInstance.position.y = pinLift + 0.5 * minPinLen;
                 pins.push(pinInstance);
+                const idx = z * gridWidth + x;
+                const regionX = Math.min(soundRegionsX - 1, Math.floor((x / gridWidth) * soundRegionsX));
+                const regionZ = Math.min(soundRegionsZ - 1, Math.floor((z / gridDepth) * soundRegionsZ));
+                const regionIndex = regionZ * soundRegionsX + regionX;
+                pinRegionIndex[idx] = regionIndex;
+                pinsPerRegion[regionIndex]++;
             }
         }
         pin.setEnabled(false);
+        const regionMovement = new Float32Array(soundRegionCount);
+        const regionActiveCount = new Uint16Array(soundRegionCount);
+        const regionLastTrigger = new Float32Array(soundRegionCount);
+        const triggeredMask = new Uint8Array(soundRegionCount);
+        const regionTriggers: Array<{ index: number; gain: number; pan: number; color: number }> = [];
+        regionLastTrigger.fill(-Infinity);
+        let lastFrameTime = performance.now();
+        const hasTriggeredNeighbor = (regionIndex: number): boolean => {
+            const regionX = regionIndex % soundRegionsX;
+            const regionZ = Math.floor(regionIndex / soundRegionsX);
+            for (let dz = -1; dz <= 1; dz++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    if (dx === 0 && dz === 0) continue;
+                    const nx = regionX + dx;
+                    const nz = regionZ + dz;
+                    if (nx < 0 || nx >= soundRegionsX || nz < 0 || nz >= soundRegionsZ) continue;
+                    const neighborIndex = nz * soundRegionsX + nx;
+                    if (triggeredMask[neighborIndex]) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
         
         // Add a ground plane for reference
         var ground = MeshBuilder.CreateGround("ground", { width: totalWidth, height: totalDepth }, scene);
@@ -347,6 +393,13 @@ class App {
             sigmaS: AppConfig.viz.sigmaS,          // Bilateral spatial sigma (pixels)
             sigmaR: AppConfig.viz.sigmaR,          // Bilateral range sigma (value units)
             temporalLerp: AppConfig.viz.temporalLerp // Smoothing for center/scale over time
+        };
+        const audioParams = {
+            regionThreshold: AppConfig.audio.regionThreshold,
+            regionGain: AppConfig.audio.regionGain,
+            regionCooldownMs: AppConfig.audio.regionCooldownMs,
+            regionActivationFraction: AppConfig.audio.regionActivationFraction,
+            pinActivationThreshold: AppConfig.audio.pinActivationThreshold,
         };
 
         // Simple on-screen UI to crank knobs
@@ -437,6 +490,35 @@ class App {
                 <label style="display:block;margin:6px 0;">
                     <div>max height diff: <span id="pinMaxStepVal"></span></div>
                     <input id="pinMaxStep" type="range" min="0.005" max="0.2" step="0.005">
+                </label>
+            </div>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Audio</strong>
+                </div>
+                <label style="display:flex;justify-content:space-between;gap:8px;margin:4px 0;align-items:center;">
+                    <span>Sound</span>
+                    <input id="audioEnable" type="checkbox">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>active pins: <span id="audioActivationVal"></span></div>
+                    <input id="audioActivation" type="range" min="0.3" max="1" step="0.02">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>pin movement: <span id="audioPinThresholdVal"></span></div>
+                    <input id="audioPinThreshold" type="range" min="0.001" max="0.05" step="0.001">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>region energy: <span id="audioRegionThresholdVal"></span></div>
+                    <input id="audioRegionThreshold" type="range" min="0" max="2" step="0.05">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>region cooldown: <span id="audioCooldownVal"></span></div>
+                    <input id="audioRegionCooldown" type="range" min="60" max="800" step="10">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>region gain: <span id="audioRegionGainVal"></span></div>
+                    <input id="audioRegionGain" type="range" min="0" max="1.2" step="0.05">
                 </label>
             </div>
             <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
@@ -550,6 +632,80 @@ class App {
         updatePinMaxStep();
         pinMaxStepEl.oninput = updatePinMaxStep;
 
+        const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+        const audioEnableEl = byId('audioEnable');
+        audioEnableEl.checked = audioEnabled;
+        audioEnableEl.oninput = () => {
+            audioEnabled = audioEnableEl.checked;
+            pinAudio.setMuted(!audioEnabled);
+        };
+        const bindAudioRange = (
+            inputId: string,
+            valueId: string,
+            updater: (v: number) => void,
+            fmt: (v: number) => string,
+            min: number,
+            max: number
+        ) => {
+            const input = byId(inputId);
+            const valEl = panel.querySelector(`#${valueId}`) as HTMLElement;
+            const update = () => {
+                const raw = parseFloat(input.value);
+                const val = clamp(Number.isFinite(raw) ? raw : min, min, max);
+                updater(val);
+                valEl.textContent = fmt(val);
+            };
+            input.value = clamp(Number(input.value) || min, min, max).toString();
+            update();
+            input.oninput = update;
+        };
+        byId('audioActivation').value = String(audioParams.regionActivationFraction);
+        byId('audioPinThreshold').value = String(audioParams.pinActivationThreshold);
+        byId('audioRegionThreshold').value = String(audioParams.regionThreshold);
+        byId('audioRegionCooldown').value = String(audioParams.regionCooldownMs);
+        byId('audioRegionGain').value = String(audioParams.regionGain);
+
+        bindAudioRange(
+            'audioActivation',
+            'audioActivationVal',
+            (v) => (audioParams.regionActivationFraction = v),
+            (v) => `${Math.round(v * 100)}%`,
+            0.3,
+            1
+        );
+        bindAudioRange(
+            'audioPinThreshold',
+            'audioPinThresholdVal',
+            (v) => (audioParams.pinActivationThreshold = v),
+            (v) => v.toFixed(3),
+            0.001,
+            0.05
+        );
+        bindAudioRange(
+            'audioRegionThreshold',
+            'audioRegionThresholdVal',
+            (v) => (audioParams.regionThreshold = v),
+            (v) => v.toFixed(2),
+            0,
+            2
+        );
+        bindAudioRange(
+            'audioRegionCooldown',
+            'audioCooldownVal',
+            (v) => (audioParams.regionCooldownMs = v),
+            (v) => `${Math.round(v)} ms`,
+            60,
+            800
+        );
+        bindAudioRange(
+            'audioRegionGain',
+            'audioRegionGainVal',
+            (v) => (audioParams.regionGain = v),
+            (v) => v.toFixed(2),
+            0,
+            1.2
+        );
+
         // --- Effect toggles ---
         let disposeHalloween: null | (() => void) = null;
         const setupHalloween = (enabled: boolean) => {
@@ -622,6 +778,23 @@ class App {
         // START RENDER LOOP BEFORE XR INITIALIZATION
         // This is critical - the scene must be rendering before entering XR
         engine.runRenderLoop(() => {
+            const now = performance.now();
+            const deltaSeconds = Math.max(1 / 240, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+            regionMovement.fill(0);
+            regionActiveCount.fill(0);
+            triggeredMask.fill(0);
+            regionTriggers.length = 0;
+            const contributeMovement = (idx: number, prev: number, next: number) => {
+                const movement = Math.min(perPinMovementCap, Math.abs(next - prev));
+                if (movement < 1e-4) return;
+                const regionIndex = pinRegionIndex[idx];
+                regionMovement[regionIndex] += movement;
+                if (movement >= audioParams.pinActivationThreshold) {
+                    regionActiveCount[regionIndex]++;
+                }
+            };
+
             // Process video frame and update pin heights
             if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && videoCtx) {
                 // Draw cropped video frame to canvas before downsampling
@@ -706,6 +879,7 @@ class App {
                         pinInstance.scaling.y = height;
                         // Anchor base near plane: baseY ~= pinLift
                         pinInstance.position.y = pinLift + 0.5 * height;
+                        contributeMovement(index, h0, height);
                     });
                 } else {
                     // Robust center/scale on disparity domain
@@ -744,9 +918,48 @@ class App {
                         const height = h0 + delta;
                         pinInstance.scaling.y = height;
                         pinInstance.position.y = pinLift + 0.5 * height;
+                        contributeMovement(idx, h0, height);
                     }
                 }
             }
+
+            if (!audioEnabled) {
+                pinAudio.update(deltaSeconds);
+                scene.render();
+                return;
+            }
+
+            const regionThreshold = audioParams.regionThreshold;
+            const regionCooldownMs = Math.max(0, audioParams.regionCooldownMs);
+            const regionGainScale = audioParams.regionGain;
+            const activationFraction = Math.min(1, Math.max(0, audioParams.regionActivationFraction));
+            const activationHeadroom = Math.max(1e-3, 1 - activationFraction);
+            for (let i = 0; i < soundRegionCount; i++) {
+                const energy = regionMovement[i];
+                if (energy <= regionThreshold) continue;
+                const pinCount = Math.max(1, pinsPerRegion[i]);
+                const activation = regionActiveCount[i] / pinCount;
+                if (activation < activationFraction) continue;
+                if (now - regionLastTrigger[i] < regionCooldownMs) continue;
+                const activationScore = Math.min(1, (activation - activationFraction) / activationHeadroom);
+                if (activationScore <= 1e-3) continue;
+                const energyTerm = Math.max(0, energy - regionThreshold);
+                const energyScore = Math.pow(energyTerm, 0.6);
+                const gain = Math.min(1, energyScore * activationScore * regionGainScale);
+                if (gain <= 1e-3) continue;
+                regionLastTrigger[i] = now;
+                const regionX = i % soundRegionsX;
+                const pan = (regionX + 0.5) / soundRegionsX;
+                const color = (Math.random() * 2 - 1) * 0.6;
+                regionTriggers.push({ index: i, gain, pan, color });
+                triggeredMask[i] = 1;
+            }
+            for (const trigger of regionTriggers) {
+                const bulkAmount = hasTriggeredNeighbor(trigger.index) ? trigger.gain * 0.45 : 0;
+                pinAudio.bumpRegion(trigger.pan, trigger.gain, bulkAmount, trigger.color);
+            }
+
+            pinAudio.update(deltaSeconds);
             
             scene.render();
         });

@@ -138,8 +138,19 @@ Env Vars
   - `VITE_VIZ_GAMMA` (default `3.0`)
   - `VITE_VIZ_DETAIL` (default `0.6`)
   - `VITE_VIZ_SIGMA_S` (default `1.0`)
-  - `VITE_VIZ_SIGMA_R` (default `0.08`)
-  - `VITE_VIZ_TEMPORAL` (default `0.1`)
+- `VITE_VIZ_SIGMA_R` (default `0.08`)
+- `VITE_VIZ_TEMPORAL` (default `0.1`)
+- Audio defaults (see “Audio Controls” below):
+  - `VITE_AUDIO_ENABLED` (default `true`) — master on/off for the entire audio subsystem.
+  - `VITE_AUDIO_REGION_THRESHOLD` (default `0.4`) — per-region motion energy floor before any sound is allowed.
+  - `VITE_AUDIO_REGION_COOLDOWN_MS` (default `220`) — cooldown window in milliseconds for a region that just fired.
+  - `VITE_AUDIO_REGION_GAIN` (default `0.45`) — gain multiplier applied to the computed region energy.
+  - `VITE_AUDIO_PIN_ACTIVATION_THRESHOLD` (default `0.01`) — minimum per-pin movement that counts toward a region’s active fraction.
+  - `VITE_AUDIO_REGION_ACTIVATION_FRACTION` (default `0.6`) — fraction of pins that must be active in a region for it to qualify.
+  - `VITE_AUDIO_COLOR_JITTER_HZ` (default `350`) — maximum stereo filter frequency offset per burst for tonal variation.
+  - `VITE_AUDIO_BULK_BUMP_SCALE` (default `0.7`) — how strongly neighboring regions feed the low rumble layer.
+  - `VITE_AUDIO_BULK_DECAY_PER_SECOND` (default `2.0`) — decay rate for the bulk layer envelope.
+  - `VITE_AUDIO_BULK_MAX_ENV` (default `1.5`) — ceiling for the bulk layer envelope to avoid clipping.
 - Looking Glass view:
   - `VITE_LKG_TARGET_X` (default `0`)
   - `VITE_LKG_TARGET_Y` (default `-0.5`)
@@ -155,3 +166,14 @@ Effects
 - Toggle the Halloween mood in the on‑screen panel under Effects.
 - Implementation lives in `src/effects.ts` as `enableHalloweenMood(scene, engine)` which returns a disposer to turn it off and restore prior post‑processing settings.
 - Use the same pattern to add more composable, toggleable effects.
+
+Audio Controls
+- `Sound`: master checkbox in the Audio panel (mirrors `VITE_AUDIO_ENABLED`). When off, the audio graph stays warm but outputs silence so you can re-enable instantly.
+- `active pins` (`VITE_AUDIO_REGION_ACTIVATION_FRACTION`): raises/lowers how many pins in a region must exceed the per-pin threshold before sound can trigger.
+- `pin movement` (`VITE_AUDIO_PIN_ACTIVATION_THRESHOLD`): per-pin motion needed before a pin is considered “active.”
+- `region energy` (`VITE_AUDIO_REGION_THRESHOLD`): rejects noisy single pixels—only energetic regions pass this gate.
+- `region cooldown` (`VITE_AUDIO_REGION_COOLDOWN_MS`): milliseconds to wait before the same region can fire again.
+- `region gain` (`VITE_AUDIO_REGION_GAIN`): scales the burst amplitude feeding the stereo envelopes.
+- Advanced env-only knobs:
+  - `VITE_AUDIO_COLOR_JITTER_HZ` biases how far the stereo band-pass filters can wander per burst.
+  - `VITE_AUDIO_BULK_BUMP_SCALE`, `VITE_AUDIO_BULK_DECAY_PER_SECOND`, and `VITE_AUDIO_BULK_MAX_ENV` shape the low “bulk” layer that rumbles when adjacent regions move together.
