@@ -1,5 +1,7 @@
 // Video processing configuration for pre-downsample cropping
-// Reads Vite env vars and returns a normalized config
+// Reads AppConfig defaults (with env overrides) and allows URL-based tweaks
+
+import { AppConfig } from "./config";
 
 export type VideoCropConfig = {
   // Center of crop in normalized [0,1] space
@@ -21,30 +23,33 @@ function parseNumber(raw: string | undefined, fallback: number): number {
 }
 
 export function getVideoCropConfig(): VideoCropConfig {
-  // Read from Vite env with a safe accessor. Some bundlers/plugins are picky
-  // about the shape of the expression, so prefer bracket access.
-  // IMPORTANT: use direct dot access so Vite can statically detect and expose
-  // these keys in both dev and build. Avoid optional chaining before `env`.
-  const envAny: any = (import.meta as any).env || {};
-
   // Allow quick runtime overrides via URL query params (no rebuild needed)
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 
-  const cxRaw = params.get('cropX') ?? (envAny.VITE_CROP_CENTER_X_PCT as string | undefined);
-  const cyRaw = params.get('cropY') ?? (envAny.VITE_CROP_CENTER_Y_PCT as string | undefined);
-  const wRaw = params.get('cropW') ?? (envAny.VITE_CROP_WIDTH_PCT as string | undefined);
-  const hRaw = params.get('cropH') ?? (envAny.VITE_CROP_HEIGHT_PCT as string | undefined);
+  const cxRaw = params.get('cropX');
+  const cyRaw = params.get('cropY');
+  const wRaw = params.get('cropW');
+  const hRaw = params.get('cropH');
 
   // Log the raw inputs once to help diagnose env loading issues
   if (!(window as any).__loggedCropEnvRaw) {
-    console.log('Video crop raw inputs:', { cxRaw, cyRaw, wRaw, hRaw, from: params.toString() ? 'query-params' : 'env' });
+    console.log('Video crop raw inputs:', {
+      cxRaw,
+      cyRaw,
+      wRaw,
+      hRaw,
+      from: params.toString() ? 'query-params' : 'config',
+      defaults: AppConfig.videoCrop
+    });
     (window as any).__loggedCropEnvRaw = true;
   }
 
-  const centerX = clamp(parseNumber(cxRaw as any, 0.5), 0, 1);
-  const centerY = clamp(parseNumber(cyRaw as any, 0.5), 0, 1);
-  const widthPct = clamp(parseNumber(wRaw as any, 1), 0.01, 1);
-  const heightPct = clamp(parseNumber(hRaw as any, 1), 0.01, 1);
+  const config: VideoCropConfig = { ...AppConfig.videoCrop };
 
-  return { centerX, centerY, widthPct, heightPct };
+  if (cxRaw !== null) config.centerX = clamp(parseNumber(cxRaw, config.centerX), 0, 1);
+  if (cyRaw !== null) config.centerY = clamp(parseNumber(cyRaw, config.centerY), 0, 1);
+  if (wRaw !== null) config.widthPct = clamp(parseNumber(wRaw, config.widthPct), 0.01, 1);
+  if (hRaw !== null) config.heightPct = clamp(parseNumber(hRaw, config.heightPct), 0.01, 1);
+
+  return config;
 }

@@ -5,6 +5,10 @@ const envAny: any = (import.meta as any).env || {};
 
 const truthy = new Set(["1", "true", "yes", "on"]);
 
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(Math.max(n, min), max);
+}
+
 function envNum(name: string, def: number): number {
   const v = envAny?.[name];
   if (v === undefined || v === null || v === "") return def;
@@ -28,8 +32,8 @@ const DEFAULTS = {
   pinSpacing: 0.12,
   pinLift: 0.01,
   pinHeightScale: 2,
-  pinLerp: 0.25,
-  pinMaxStep: 0.06,
+  pinLerp: 0.35,
+  pinMaxStep: 0.20,
   // Effects
   halloweenDefault: false,
   // Visualization defaults
@@ -48,10 +52,15 @@ const DEFAULTS = {
   lkgTargetZ: 0,
   lkgTargetDiam: 4,
   lkgFovyDeg: 40,
-  lkgDepthiness: 0.6,
+  lkgDepthiness: 0.75,
   lkgTrackballXDeg: 0,
   lkgTrackballYDeg: 90,
   lkgTrackballZDeg: 0,
+  // Video crop (normalized percentages)
+  cropCenterX: 0.5,
+  cropCenterY: 0.5,
+  cropWidthPct: 0.8,
+  cropHeightPct: 0.8,
 };
 
 export const AppConfig = {
@@ -78,6 +87,12 @@ export const AppConfig = {
     sigmaS: envNum("VITE_VIZ_SIGMA_S", DEFAULTS.vizSigmaS),
     sigmaR: envNum("VITE_VIZ_SIGMA_R", DEFAULTS.vizSigmaR),
     temporalLerp: envNum("VITE_VIZ_TEMPORAL", DEFAULTS.vizTemporal),
+  },
+  videoCrop: {
+    centerX: clamp(envNum("VITE_CROP_CENTER_X_PCT", DEFAULTS.cropCenterX), 0, 1),
+    centerY: clamp(envNum("VITE_CROP_CENTER_Y_PCT", DEFAULTS.cropCenterY), 0, 1),
+    widthPct: clamp(envNum("VITE_CROP_WIDTH_PCT", DEFAULTS.cropWidthPct), 0.01, 1),
+    heightPct: clamp(envNum("VITE_CROP_HEIGHT_PCT", DEFAULTS.cropHeightPct), 0.01, 1),
   },
   lookingGlass: {
     targetX: envNum("VITE_LKG_TARGET_X", DEFAULTS.lkgTargetX),

@@ -404,6 +404,18 @@ class App {
             </label>
             <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Crop</strong>
+                    <span id="cropPctVal"></span>
+                </div>
+                <input id="cropPct" type="range" min="0.25" max="1" step="0.01">
+                <div style="opacity:0.8;font-size:11px;">Adjusts both width & height</div>
+                <label style="display:block;margin:6px 0;">
+                    <div>center Y: <span id="cropCenterYVal"></span></div>
+                    <input id="cropCenterY" type="range" min="0" max="1" step="0.01">
+                </label>
+            </div>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
                     <strong>Effects</strong>
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
                         <input id="halloweenMood" type="checkbox" checked> Halloween
@@ -464,6 +476,36 @@ class App {
         bindRange('sigmaS', 'sigmaSVal');
         bindRange('sigmaR', 'sigmaRVal');
         bindRange('temporalLerp', 'temporalVal');
+
+        // Crop percentage slider (shared for width/height)
+        const cropPctEl = byId('cropPct');
+        const cropPctValEl = panel.querySelector('#cropPctVal') as HTMLElement;
+        const clampCrop = (v: number) => Math.min(1, Math.max(0.25, v));
+        const initialCrop = clampCrop(Math.min(cropCfg.widthPct, cropCfg.heightPct));
+        const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+        const updateCropPct = () => {
+            const v = clampCrop(parseFloat(cropPctEl.value) || initialCrop);
+            cropCfg.widthPct = v;
+            cropCfg.heightPct = v;
+            cropPctValEl.textContent = `${(v * 100).toFixed(0)}%`;
+            loggedCropRect = false; // re-log once with the updated crop rect
+        };
+        cropPctEl.value = initialCrop.toFixed(2);
+        updateCropPct();
+        cropPctEl.oninput = updateCropPct;
+
+        // Crop center Y slider
+        const cropCenterYEl = byId('cropCenterY');
+        const cropCenterYValEl = panel.querySelector('#cropCenterYVal') as HTMLElement;
+        const updateCropCenterY = () => {
+            const v = clamp01(parseFloat(cropCenterYEl.value) || cropCfg.centerY);
+            cropCfg.centerY = v;
+            cropCenterYValEl.textContent = `${(v * 100).toFixed(0)}%`;
+            loggedCropRect = false;
+        };
+        cropCenterYEl.value = clamp01(cropCfg.centerY).toFixed(2);
+        updateCropCenterY();
+        cropCenterYEl.oninput = updateCropCenterY;
 
         // Looking Glass: depthiness + debug cube
         const lkgDbgEl = byId('lkgDebug');
