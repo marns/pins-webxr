@@ -1,6 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, TransformNode } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -29,6 +29,8 @@ try {
   
 
 class App {
+    private xrExperience: any | undefined;
+    private debugRoot: TransformNode | undefined;
 
     async init(scene: Scene) {
         // Configure Looking Glass settings BEFORE creating the polyfill
@@ -54,6 +56,7 @@ class App {
             targetY: LookingGlassConfig.targetY,
             targetZ: LookingGlassConfig.targetZ,
             targetDiam: LookingGlassConfig.targetDiam,
+            depthiness: LookingGlassConfig.depthiness,
             trackballY: (LookingGlassConfig.trackballY * 180 / Math.PI).toFixed(1) + " degrees",
             fovy: (LookingGlassConfig.fovy * 180 / Math.PI).toFixed(1) + " degrees"
         });
@@ -99,6 +102,8 @@ class App {
                 console.log("XR Session ended");
             });
         }
+        // Keep a reference so UI can check state later
+        this.xrExperience = xr;
     }
 
     constructor() {
@@ -306,6 +311,31 @@ class App {
         groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1); // Minimal reflection
         ground.material = groundMaterial;
         
+        // Build a simple Looking Glass debug rig (hidden by default)
+        this.debugRoot = new TransformNode('lkgDebugRoot', scene);
+        this.debugRoot.setEnabled(false);
+        // Wireframe cube around origin to visualize depth volume
+        const axisBox = MeshBuilder.CreateBox('lkgAxisBox', { size: 1.0 }, scene);
+        axisBox.parent = this.debugRoot;
+        const axisMat = new StandardMaterial('lkgAxisMat', scene);
+        axisMat.wireframe = true;
+        axisMat.emissiveColor = new Color3(0.1, 0.8, 0.2);
+        axisBox.material = axisMat;
+        axisBox.position = new Vector3(0, 0.5, 0);
+        // Near/Far cubes to feel parallax
+        const near = MeshBuilder.CreateBox('lkgNear', { size: 0.25 }, scene);
+        near.position = new Vector3(-0.4, 0.5, -1.0);
+        const nearMat = new StandardMaterial('lkgNearMat', scene);
+        nearMat.emissiveColor = new Color3(0.9, 0.1, 0.1);
+        near.material = nearMat;
+        near.parent = this.debugRoot;
+        const far = MeshBuilder.CreateBox('lkgFar', { size: 0.25 }, scene);
+        far.position = new Vector3(0.4, 0.5, 1.0);
+        const farMat = new StandardMaterial('lkgFarMat', scene);
+        farMat.emissiveColor = new Color3(0.1, 0.4, 1.0);
+        far.material = farMat;
+        far.parent = this.debugRoot;
+        
         // === Visualization controls (tweakable without reload) ===
         const vizParams = {
             enabled: AppConfig.viz.enabled,        // Master enable for enhancement pipeline
@@ -397,6 +427,19 @@ class App {
                     <input id="pinMaxStep" type="range" min="0.005" max="0.2" step="0.005">
                 </label>
             </div>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Looking Glass</strong>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input id="lkgDebug" type="checkbox"> Debug cube
+                    </label>
+                </div>
+                <label style="display:block;margin:6px 0;">
+                    <div>depthiness: <span id=\"depthinessVal\"></span></div>
+                    <input id=\"depthiness\" type=\"range\" min=\"0\" max=\"2\" step=\"0.01\" value=\"${AppConfig.lookingGlass.depthiness}\"> 
+                </label>
+                <div style=\"opacity:0.8;font-size:11px;\">If changes seem ignored, exit and re-enter XR.</div>
+            </div>
         `;
         document.body.appendChild(panel);
         const byId = (id: string) => panel.querySelector(`#${id}`) as HTMLInputElement;
@@ -421,6 +464,25 @@ class App {
         bindRange('sigmaS', 'sigmaSVal');
         bindRange('sigmaR', 'sigmaRVal');
         bindRange('temporalLerp', 'temporalVal');
+
+        // Looking Glass: depthiness + debug cube
+        const lkgDbgEl = byId('lkgDebug');
+        const depthinessEl = byId('depthiness');
+        const depthinessValEl = panel.querySelector('#depthinessVal') as HTMLElement;
+        const updateDepthiness = () => {
+            const v = parseFloat(depthinessEl.value);
+            depthinessValEl.textContent = v.toFixed(2);
+            LookingGlassConfig.depthiness = v;
+            console.log('Updated Looking Glass depthiness:', v);
+        };
+        // Initialize UI state
+        depthinessEl.value = String(AppConfig.lookingGlass.depthiness);
+        updateDepthiness();
+        depthinessEl.oninput = updateDepthiness;
+        // Toggle debug cube visibility
+        lkgDbgEl.oninput = () => {
+            if (this.debugRoot) this.debugRoot.setEnabled(lkgDbgEl.checked);
+        };
 
         // Pin height scale slider
         const pinScaleEl = byId('pinHeightScale');
