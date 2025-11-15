@@ -1,6 +1,6 @@
 import "@babylonjs/core/Debug/debugLayer";
 import "@babylonjs/inspector";
-import { Engine, Scene, ArcRotateCamera, Vector3, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, TransformNode } from "@babylonjs/core";
+import { Engine, Scene, ArcRotateCamera, Vector3, Vector2, MeshBuilder, StandardMaterial, Color3, Color4, InstancedMesh, PBRMaterial, DirectionalLight, CubeTexture, PointLight, TransformNode, HemisphericLight } from "@babylonjs/core";
 import {
     LookingGlassWebXRPolyfill,
     LookingGlassConfig
@@ -182,71 +182,84 @@ class App {
         skyboxMaterial.backFaceCulling = false;
         skyboxMaterial.disableLighting = true;
         
-        // Dim, slightly red-tinted sky to let red lighting dominate
-        skyboxMaterial.emissiveColor = new Color3(0.12, 0.03, 0.03);
+        // Dim, slightly red-tinted sky to let warm lighting dominate without neon vibes
+        skyboxMaterial.emissiveColor = new Color3(0.08, 0.04, 0.05);
         skybox.material = skyboxMaterial;
         skybox.infiniteDistance = true;
         
         // Create environment texture for reflections
         const hdrTexture = CubeTexture.CreateFromPrefilteredData("environmentSpecular.env", scene);
         scene.environmentTexture = hdrTexture;
-        scene.environmentIntensity = 0.15;
+        scene.environmentIntensity = 0.3;
         
         scene.clearColor = new Color3(0.05, 0.0, 0.0).toColor4();
         // Keep fog off for performance
         
-        // Moderate ambient lighting
-        // const ambientLight = new HemisphericLight("ambientLight", new Vector3(0, 1, 0), scene);
-        // ambientLight.intensity = 0;
-        // ambientLight.diffuse = new Color3(1, 1, 1);
-        // ambientLight.specular = new Color3(0.8, 0.8, 0.8);
-        // ambientLight.groundColor = new Color3(0.7, 0.7, 0.75);
+        // Soft red-leaning ambient fill so the metal never falls completely dark
+        const ambientLight = new HemisphericLight("ambientLight", new Vector3(0, 1, 0), scene);
+        ambientLight.intensity = 0.38;
+        ambientLight.diffuse = new Color3(0.8, 0.6, 0.5);
+        ambientLight.specular = new Color3(0.32, 0.22, 0.2);
+        ambientLight.groundColor = new Color3(0.12, 0.08, 0.08);
         
         // Main directional light from slight angle for better cylinder definition
         const mainLight = new DirectionalLight("mainLight", new Vector3(0.2, -1, 0.15), scene);
-        mainLight.intensity = 0.0;
-        mainLight.diffuse = new Color3(1, 1, 1);
-        mainLight.specular = new Color3(1.2, 1.2, 1.2);
+        mainLight.intensity = 0.85;
+        mainLight.diffuse = new Color3(1.0, 0.95, 0.9);
+        mainLight.specular = new Color3(1.2, 1.15, 1.1);
         
         // Key light from front-left - creates main highlights
         const keyLight = new PointLight("keyLight", new Vector3(-3, 3, 3), scene);
-        keyLight.intensity = 0;
-        keyLight.diffuse = new Color3(1, 1, 1);
-        keyLight.specular = new Color3(1.5, 1.5, 1.5);
+        keyLight.intensity = 0.75;
+        keyLight.diffuse = new Color3(1.0, 0.85, 0.65);
+        keyLight.specular = new Color3(1.8, 1.35, 1.0);
+        keyLight.range = 30;
         
         // Fill light from front-right for balance
         const fillLight = new PointLight("fillLight", new Vector3(3, 3, 3), scene);
-        fillLight.intensity = 0;
-        fillLight.diffuse = new Color3(1, 1, 1);
-        fillLight.specular = new Color3(1.5, 1.5, 1.5);
+        fillLight.intensity = 0.5;
+        fillLight.diffuse = new Color3(0.65, 0.8, 1.0);
+        fillLight.specular = new Color3(1.1, 1.3, 1.6);
+        fillLight.range = 30;
         
         // Back light from behind for rim lighting
         const backLight = new PointLight("backLight", new Vector3(0, 2, -5), scene);
-        backLight.intensity = 0;
-        backLight.diffuse = new Color3(1, 1, 1);
-        backLight.specular = new Color3(1.5, 1.5, 1.5);
+        backLight.intensity = 0.4;
+        backLight.diffuse = new Color3(0.95, 0.5, 0.4);
+        backLight.specular = new Color3(1.2, 0.7, 0.6);
+        backLight.range = 40;
         
         // Side lights at cylinder mid-height to create highlights on curved surfaces
         const leftLight = new PointLight("leftLight", new Vector3(-5, 1, 0), scene);
-        leftLight.intensity = 0;
-        leftLight.diffuse = new Color3(1, 1, 1);
-        leftLight.specular = new Color3(1.8, 1.8, 1.8);
+        leftLight.intensity = 0.32;
+        leftLight.diffuse = new Color3(0.85, 0.55, 0.4);
+        leftLight.specular = new Color3(1.1, 0.85, 0.65);
+        leftLight.range = 25;
         
         const rightLight = new PointLight("rightLight", new Vector3(5, 1, 0), scene);
-        rightLight.intensity = 0;
-        rightLight.diffuse = new Color3(1, 1, 1);
-        rightLight.specular = new Color3(1.8, 1.8, 1.8);
+        rightLight.intensity = 0.32;
+        rightLight.diffuse = new Color3(0.55, 0.75, 0.95);
+        rightLight.specular = new Color3(0.85, 1.25, 1.7);
+        rightLight.range = 25;
         
         // Low grazing lights to create vertical highlight streaks on cylinder sides
         const grazingLight1 = new PointLight("grazingLight1", new Vector3(0, 0, 6), scene);
-        grazingLight1.intensity = 0;
-        grazingLight1.diffuse = new Color3(0.9, 0.9, 0.9);
-        grazingLight1.specular = new Color3(2.0, 2.0, 2.0);
+        grazingLight1.intensity = 0.35;
+        grazingLight1.diffuse = new Color3(0.95, 0.7, 0.6);
+        grazingLight1.specular = new Color3(1.6, 1.25, 1.1);
+        grazingLight1.range = 25;
         
         const grazingLight2 = new PointLight("grazingLight2", new Vector3(0, 0, -6), scene);
-        grazingLight2.intensity = 0;
-        grazingLight2.diffuse = new Color3(0.9, 0.9, 0.9);
-        grazingLight2.specular = new Color3(2.0, 2.0, 2.0);
+        grazingLight2.intensity = 0.35;
+        grazingLight2.diffuse = new Color3(0.65, 0.85, 1.0);
+        grazingLight2.specular = new Color3(1.4, 1.75, 1.95);
+        grazingLight2.range = 25;
+
+        const lightRig = new TransformNode("dynamicLightRig", scene);
+        lightRig.position = new Vector3(0, 1.5, 0);
+        [keyLight, fillLight, backLight, leftLight, rightLight, grazingLight1, grazingLight2].forEach(light => {
+            light.parent = lightRig;
+        });
 
         // Halloween mood is now toggleable via UI; default enabled below
         
@@ -265,25 +278,45 @@ class App {
         sphereMaterial.metallic = 1.0;
         
         // Slightly red metal to push overall redness without heavy lighting
-        sphereMaterial.albedoColor = new Color3(0.9, 0.28, 0.28);
+        sphereMaterial.albedoColor = new Color3(0.78, 0.33, 0.28);
         
         // High reflectance for chrome-like appearance
-        sphereMaterial.metallicReflectanceColor = new Color3(1.0, 1.0, 1.0);
-        sphereMaterial.metallicF0Factor = 0.85;
+        sphereMaterial.metallicReflectanceColor = new Color3(1.0, 0.95, 0.9);
+        sphereMaterial.metallicF0Factor = 0.8;
+        sphereMaterial.reflectivityColor = new Color3(0.65, 0.35, 0.3);
         
         // Enhanced environment reflections - key for bright sides!
-        sphereMaterial.environmentIntensity = 2.0;
+        sphereMaterial.environmentIntensity = 1.6;
         sphereMaterial.reflectionTexture = scene.environmentTexture;
+
+        sphereMaterial.clearCoat.isEnabled = true;
+        sphereMaterial.clearCoat.intensity = 0.45;
+        sphereMaterial.clearCoat.roughness = 0.2;
+        sphereMaterial.clearCoat.tintColor = new Color3(0.9, 0.4, 0.35);
+        sphereMaterial.clearCoat.tintThickness = 0.9;
+
+        sphereMaterial.sheen.isEnabled = true;
+        sphereMaterial.sheen.intensity = 0.55;
+        sphereMaterial.sheen.color = new Color3(0.9, 0.5, 0.4);
+        sphereMaterial.sheen.roughness = 0.45;
+
+        sphereMaterial.anisotropy.isEnabled = true;
+        sphereMaterial.anisotropy.intensity = 0.75;
+        sphereMaterial.anisotropy.direction = new Vector2(0, 1);
+        
+        sphereMaterial.subSurface.isTranslucencyEnabled = true;
+        sphereMaterial.subSurface.tintColor = new Color3(0.75, 0.3, 0.25);
+        sphereMaterial.subSurface.translucencyIntensity = 0.22;
         
         // Moderate lighting response to show form
         //sphereMaterial.directIntensity = 1;
         //sphereMaterial.specularIntensity = 1.8;
         
         // A touch of emissive red helps keep the scene red with fewer lights
-        sphereMaterial.emissiveColor = new Color3(0.06, 0.01, 0.01);
+        sphereMaterial.emissiveColor = new Color3(0.04, 0.012, 0.012);
         
         // Good ambient response for visibility
-        sphereMaterial.ambientColor = new Color3(0.8, 0.8, 0.8);
+        sphereMaterial.ambientColor = new Color3(0.7, 0.35, 0.32);
         
         // Physical rendering
         sphereMaterial.usePhysicalLightFalloff = true;
@@ -332,6 +365,16 @@ class App {
         const regionTriggers: Array<{ index: number; gain: number; pan: number; color: number }> = [];
         regionLastTrigger.fill(-Infinity);
         let lastFrameTime = performance.now();
+        let lightRigTime = 0;
+        let lightRigSpeed = 1.0;
+        let lightRigIntensity = 1.0;
+        const baseKeyIntensity = keyLight.intensity;
+        const baseFillIntensity = fillLight.intensity;
+        const baseBackIntensity = backLight.intensity;
+        const baseLeftIntensity = leftLight.intensity;
+        const baseRightIntensity = rightLight.intensity;
+        const baseGrazeWarmIntensity = grazingLight1.intensity;
+        const baseGrazeCoolIntensity = grazingLight2.intensity;
         const hasTriggeredNeighbor = (regionIndex: number): boolean => {
             const regionX = regionIndex % soundRegionsX;
             const regionZ = Math.floor(regionIndex / soundRegionsX);
@@ -494,6 +537,19 @@ class App {
             </div>
             <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                    <strong>Lights</strong>
+                </div>
+                <label style="display:block;margin:6px 0;">
+                    <div>rig speed: <span id="lightRigSpeedVal"></span></div>
+                    <input id="lightRigSpeed" type="range" min="0" max="2" step="0.05" value="1">
+                </label>
+                <label style="display:block;margin:6px 0;">
+                    <div>rig intensity: <span id="lightRigIntensityVal"></span></div>
+                    <input id="lightRigIntensity" type="range" min="0.3" max="1.5" step="0.05" value="1">
+                </label>
+            </div>
+            <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
                     <strong>Audio</strong>
                 </div>
                 <label style="display:flex;justify-content:space-between;gap:8px;margin:4px 0;align-items:center;">
@@ -631,6 +687,28 @@ class App {
         pinMaxStepEl.value = String(pinMaxStep);
         updatePinMaxStep();
         pinMaxStepEl.oninput = updatePinMaxStep;
+        
+        const lightRigSpeedEl = byId('lightRigSpeed');
+        const lightRigSpeedValEl = panel.querySelector('#lightRigSpeedVal') as HTMLElement;
+        const updateLightRigSpeed = () => {
+            const raw = parseFloat(lightRigSpeedEl.value);
+            lightRigSpeed = Math.min(2, Math.max(0, Number.isFinite(raw) ? raw : 1));
+            lightRigSpeedValEl.textContent = `${lightRigSpeed.toFixed(2)}x`;
+        };
+        lightRigSpeedEl.value = String(lightRigSpeed);
+        updateLightRigSpeed();
+        lightRigSpeedEl.oninput = updateLightRigSpeed;
+        
+        const lightRigIntensityEl = byId('lightRigIntensity');
+        const lightRigIntensityValEl = panel.querySelector('#lightRigIntensityVal') as HTMLElement;
+        const updateLightRigIntensity = () => {
+            const raw = parseFloat(lightRigIntensityEl.value);
+            lightRigIntensity = Math.min(1.5, Math.max(0.3, Number.isFinite(raw) ? raw : 1));
+            lightRigIntensityValEl.textContent = `${lightRigIntensity.toFixed(2)}x`;
+        };
+        lightRigIntensityEl.value = String(lightRigIntensity);
+        updateLightRigIntensity();
+        lightRigIntensityEl.oninput = updateLightRigIntensity;
 
         const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
         const audioEnableEl = byId('audioEnable');
@@ -781,6 +859,21 @@ class App {
             const now = performance.now();
             const deltaSeconds = Math.max(1 / 240, (now - lastFrameTime) / 1000);
             lastFrameTime = now;
+            lightRigTime += deltaSeconds * lightRigSpeed;
+            lightRig.rotation.y = lightRigTime * 0.3;
+            lightRig.position.y = 1.5 + Math.sin(lightRigTime * 1.4) * 0.15;
+            const breath = 0.5 + 0.5 * Math.sin(lightRigTime * 1.1);
+            const rimPulse = 0.5 + 0.5 * Math.sin(lightRigTime * 1.9);
+            const grazePulse = 0.5 + 0.5 * Math.cos(lightRigTime * 2.3);
+            const backPulse = 0.6 + 0.4 * Math.sin(lightRigTime * 0.7 + Math.PI / 2);
+            const rigIntensity = lightRigIntensity;
+            keyLight.intensity = baseKeyIntensity * (0.7 + 0.6 * breath) * rigIntensity;
+            fillLight.intensity = baseFillIntensity * (0.7 + 0.5 * (1 - breath)) * rigIntensity;
+            backLight.intensity = baseBackIntensity * backPulse * rigIntensity;
+            leftLight.intensity = baseLeftIntensity * (0.6 + 0.7 * rimPulse) * rigIntensity;
+            rightLight.intensity = baseRightIntensity * (0.6 + 0.7 * (1 - rimPulse)) * rigIntensity;
+            grazingLight1.intensity = baseGrazeWarmIntensity * (0.6 + 0.8 * grazePulse) * rigIntensity;
+            grazingLight2.intensity = baseGrazeCoolIntensity * (0.6 + 0.8 * (1 - grazePulse)) * rigIntensity;
             regionMovement.fill(0);
             regionActiveCount.fill(0);
             triggeredMask.fill(0);
