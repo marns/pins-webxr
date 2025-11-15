@@ -26,6 +26,9 @@ KINECT_SOURCE="kinect"      # or opencv
 KINECT_STREAM="depth"       # color|depth|ir (used when source=kinect)
 HOST="127.0.0.1"
 PORT=8080
+HAS_CAFFEINATE=false
+CAFFEINATE_FG_PID=""
+CAFFEINATE_BG_PID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +87,55 @@ fi
 LOG_DIR="$WEBXR_DIR/logs"
 mkdir -p "$LOG_DIR"
 
+if command -v caffeinate >/dev/null 2>&1; then
+  HAS_CAFFEINATE=true
+else
+  echo "[launcher] Warning: caffeinate not found; system sleep prevention disabled."
+fi
+
+start_foreground_caffeinate() {
+  if [[ "$HAS_CAFFEINATE" != true ]]; then
+    return
+  fi
+  if [[ -n "$CAFFEINATE_FG_PID" ]]; then
+    return
+  fi
+  caffeinate -dimsu -w $$ >/dev/null 2>&1 &
+  CAFFEINATE_FG_PID=$!
+  echo "[launcher] caffeinate active (PID: $CAFFEINATE_FG_PID) while launcher runs."
+}
+
+start_background_caffeinate_guard() {
+  if [[ "$HAS_CAFFEINATE" != true ]]; then
+    return
+  fi
+  if [[ $# -eq 0 ]]; then
+    return
+  fi
+  nohup caffeinate -dimsu bash -c '
+    pids=("$@")
+    while true; do
+      alive=0
+      for pid in "${pids[@]}"; do
+        if kill -0 "$pid" >/dev/null 2>&1; then
+          alive=1
+          break
+        fi
+      done
+      if [[ $alive -eq 0 ]]; then
+        break
+      fi
+      sleep 15
+    done
+  ' _ "$@" >/dev/null 2>&1 &
+  CAFFEINATE_BG_PID=$!
+  echo "[launcher] caffeinate active in background (PID: $CAFFEINATE_BG_PID). Stop via: kill $CAFFEINATE_BG_PID"
+}
+
+if ! $BG_MODE; then
+  start_foreground_caffeinate
+fi
+
 # Start Kinect2 WebRTC server
 KINECT_LOG="$LOG_DIR/kinect2-webrtc.log"
 
@@ -113,6 +165,9 @@ cleanup() {
   if [[ -n "${KINECT_PID:-}" ]]; then
     kill "$KINECT_PID" >/dev/null 2>&1 || true
     wait "$KINECT_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$CAFFEINATE_FG_PID" ]]; then
+    kill "$CAFFEINATE_FG_PID" >/dev/null 2>&1 || true
   fi
 }
 
@@ -170,6 +225,7 @@ if $BG_MODE; then
   WEBXR_PID=$!
   echo "[launcher] Background PIDs -> kinect2-webrtc: $KINECT_PID, pins-webxr: $WEBXR_PID"
   echo "[launcher] Visit Vite URL (usually http://localhost:5173) and signaling at http://$HOST:$PORT"
+  start_background_caffeinate_guard "$KINECT_PID" "$WEBXR_PID"
   if $OPEN_BROWSER; then
     wait_for_vite_and_open
   fi
